@@ -924,3 +924,66 @@ def test_sponsors_partners_pages_admin_crud_inquiries_privacy_and_exports(app, c
 
 
 
+
+def test_admin_list_endpoints_sort_and_page_for_datatables(app, client):
+    """DataTables asks for one page at a time and passes the clicked column as sort_by / sort_dir."""
+    ctx = _setup_competition_and_actors(app, client)
+    mgr = _auth_headers(ctx["mgr_token"])
+
+    stage_names = ["Mango Tree", "apple cart", "Zebra Crossing", "Banana Boat", "Kiwi Bird"]
+    for idx, stage_name in enumerate(stage_names):
+        _, tok = _register_and_token(client, f"Sorter {idx}", f"sorter{idx}@test.gh")
+        resp = client.post(
+            "/api/v1/applications",
+            headers=_auth_headers(tok),
+            json={
+                "competition_id": ctx["comp"]["id"],
+                "category_id": ctx["cat"]["id"],
+                "stage_name": stage_name,
+                "title": f"{stage_name} Demo",
+                "description": "Original live audition demo performance.",
+                "external_video_url": "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+                "consent_accepted": True,
+                "rights_declaration": True,
+            },
+        )
+        assert resp.status_code == 201, resp.get_json()
+
+    def stage_order(**params):
+        resp = client.get("/api/v1/admin/submissions", headers=mgr, query_string=params)
+        assert resp.status_code == 200, resp.get_json()
+        body = resp.get_json()
+        return [row["stage_name"] for row in body["data"]], body["meta"]
+
+    newest_first = list(reversed(stage_names))
+    expected_asc = sorted(stage_names, key=str.lower)
+
+    # No column sort requested -> the endpoint's own default order (newest first) still applies.
+    assert stage_order()[0] == newest_first
+    assert [n.lower() for n in stage_order(sort_by="stage_name", sort_dir="asc")[0]] == [n.lower() for n in expected_asc]
+    assert [n.lower() for n in stage_order(sort_by="stage_name", sort_dir="desc")[0]] == [n.lower() for n in reversed(expected_asc)]
+    # Sorting by the related category name works and ties fall back to the default order.
+    assert stage_order(sort_by="category_name", sort_dir="asc")[0] == newest_first
+
+    # Only whitelisted keys reach ORDER BY: anything else is ignored rather than failing.
+    assert stage_order(sort_by="password_hash", sort_dir="desc")[0] == newest_first
+    assert stage_order(sort_by="stage_name); DROP TABLE users;--")[0] == newest_first
+
+    # Page size and page number combine with the column sort, and every record appears exactly once.
+    seen = []
+    for page in (1, 2, 3):
+        names, meta = stage_order(sort_by="stage_name", sort_dir="asc", per_page=2, page=page)
+        assert meta["total"] == 5 and meta["pages"] == 3 and meta["page"] == page and meta["per_page"] == 2
+        seen.extend(names)
+    assert [n.lower() for n in seen] == [n.lower() for n in expected_asc]
+
+    # The same contract holds on the other paginated admin lists the dashboards use.
+    users = client.get("/api/v1/admin/users", headers=_auth_headers(ctx["sup_token"]), query_string={"sort_by": "email", "sort_dir": "desc", "per_page": 100})
+    assert users.status_code == 200
+    emails = [u["email"] for u in users.get_json()["data"]]
+    assert len(emails) == 9 and emails == sorted(emails, reverse=True)
+
+    for path in ("/api/v1/admin/moderation", "/api/v1/admin/support-tickets", "/api/v1/admin/nominees"):
+        resp = client.get(path, headers=mgr, query_string={"sort_by": "status", "sort_dir": "desc", "per_page": 10})
+        assert resp.status_code == 200, (path, resp.get_json())
+        assert resp.get_json()["meta"]["per_page"] == 10

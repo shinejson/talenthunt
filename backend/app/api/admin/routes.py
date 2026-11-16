@@ -39,7 +39,7 @@ from app.services.payment_service import reconcile_payment, refund_payment
 from app.services.submission_service import moderate_submission_content
 from app.services.voting_service import create_vote_adjustment, get_incident_banner, get_nominee_round_votes, get_nominee_total_votes
 from app.tasks.jobs import reconcile_all_pending_payments
-from app.utils.pagination import paginate_query
+from app.utils.pagination import apply_sort, paginate_query
 from app.utils.responses import api_success
 from app.utils.security import slugify
 from app.utils.time_utils import parse_iso_utc, utcnow
@@ -80,6 +80,11 @@ def _apply_date_range(query, col, date_from_param: str = "date_from", date_to_pa
         except (ValueError, TypeError):
             pass
     return query
+
+
+def _related_name(name_col, condition):
+    """Correlated scalar subquery so list endpoints can be sorted by a related record's name."""
+    return db.select(name_col).where(condition).scalar_subquery()
 
 
 @admin_bp.get("/dashboard")
@@ -591,11 +596,22 @@ def admin_list_submissions():
 
     sort_key = (request.args.get("sort") or "newest").strip().lower()
     if sort_key == "oldest":
-        q = q.order_by(Application.submitted_at.asc())
+        default_order = [Application.submitted_at.asc()]
     elif sort_key == "stage_name":
-        q = q.order_by(Application.stage_name.asc(), Application.submitted_at.desc())
+        default_order = [Application.stage_name.asc(), Application.submitted_at.desc()]
     else:
-        q = q.order_by(Application.submitted_at.desc())
+        default_order = [Application.submitted_at.desc()]
+    q = apply_sort(
+        q,
+        {
+            "reference_no": Application.reference_no,
+            "stage_name": Application.stage_name,
+            "category_name": _related_name(Category.name, Category.id == Application.category_id),
+            "status": Application.status,
+            "submitted_at": Application.submitted_at,
+        },
+        default_order,
+    )
 
     items, meta = paginate_query(q, lambda a: a.to_dict(include_internal=True), default_per_page=20)
     return api_success(items, meta)
@@ -675,7 +691,7 @@ def admin_list_nominees():
 
     sort_key = (request.args.get("sort") or "newest").strip().lower()
     if sort_key == "name_asc":
-        q = q.order_by(Nominee.public_name.asc())
+        default_order = [Nominee.public_name.asc()]
     elif sort_key == "votes_desc":
         vote_sub = (
             db.session.query(
@@ -685,11 +701,20 @@ def admin_list_nominees():
             .group_by(VoteLedger.nominee_id)
             .subquery()
         )
-        q = q.outerjoin(vote_sub, Nominee.id == vote_sub.c.nom_id).order_by(
-            func.coalesce(vote_sub.c.vtotal, 0).desc(), Nominee.nominated_at.desc()
-        )
+        q = q.outerjoin(vote_sub, Nominee.id == vote_sub.c.nom_id)
+        default_order = [func.coalesce(vote_sub.c.vtotal, 0).desc(), Nominee.nominated_at.desc()]
     else:
-        q = q.order_by(Nominee.nominated_at.desc())
+        default_order = [Nominee.nominated_at.desc()]
+    q = apply_sort(
+        q,
+        {
+            "public_name": Nominee.public_name,
+            "category_name": _related_name(Category.name, Category.id == Nominee.category_id),
+            "status": Nominee.status,
+            "nominated_at": Nominee.nominated_at,
+        },
+        default_order,
+    )
 
     def _serialize(n: Nominee):
         ae = n.get_active_round_entry()
@@ -793,7 +818,16 @@ def admin_list_vote_ledger():
             )
         )
     q = _apply_date_range(q, VoteLedger.created_at)
-    q = q.order_by(VoteLedger.created_at.desc())
+    q = apply_sort(
+        q,
+        {
+            "created_at": VoteLedger.created_at,
+            "entry_type": VoteLedger.entry_type,
+            "nominee_name": _related_name(Nominee.public_name, Nominee.id == VoteLedger.nominee_id),
+            "quantity": VoteLedger.quantity,
+        },
+        [VoteLedger.created_at.desc()],
+    )
     items, meta = paginate_query(q, lambda le: le.to_dict(), default_per_page=30)
     return api_success(items, meta)
 
@@ -841,7 +875,19 @@ def admin_list_orders():
             )
         )
     q = _apply_date_range(q, Order.created_at)
-    q = q.order_by(Order.created_at.desc())
+    q = apply_sort(
+        q,
+        {
+            "public_reference": Order.public_reference,
+            "receipt_code": Order.receipt_code,
+            "nominee_name": _related_name(Nominee.public_name, Nominee.id == Order.nominee_id),
+            "vote_quantity": Order.vote_quantity,
+            "amount": Order.amount_minor,
+            "status": Order.status,
+            "created_at": Order.created_at,
+        },
+        [Order.created_at.desc()],
+    )
     items, meta = paginate_query(q, lambda o: o.to_dict(include_finance=True), default_per_page=25)
     return api_success(items, meta)
 
@@ -868,7 +914,16 @@ def admin_list_payments():
             )
         )
     q = _apply_date_range(q, Payment.created_at)
-    q = q.order_by(Payment.created_at.desc())
+    q = apply_sort(
+        q,
+        {
+            "provider_reference": Payment.provider_reference,
+            "amount": Payment.amount_minor,
+            "status": Payment.status,
+            "created_at": Payment.created_at,
+        },
+        [Payment.created_at.desc()],
+    )
     items, meta = paginate_query(q, lambda p: p.to_dict(), default_per_page=25)
 
     wh_q = WebhookEvent.query
@@ -970,7 +1025,16 @@ def admin_list_users():
                 User.location.ilike(like_q),
             )
         )
-    q = q.order_by(User.created_at.desc())
+    q = apply_sort(
+        q,
+        {
+            "full_name": User.full_name,
+            "email": User.email,
+            "status": User.status,
+            "created_at": User.created_at,
+        },
+        [User.created_at.desc()],
+    )
     items, meta = paginate_query(q, lambda u: u.to_dict(include_private=True), default_per_page=25)
     meta["available_roles"] = list(ROLE_DEFINITIONS.keys())
     return api_success(items, meta)
@@ -1033,7 +1097,16 @@ def admin_list_moderation():
                 ModerationReport.entity_id.ilike(like_q),
             )
         )
-    q = q.order_by(ModerationReport.created_at.desc())
+    q = apply_sort(
+        q,
+        {
+            "entity_type": ModerationReport.entity_type,
+            "reason": ModerationReport.reason,
+            "status": ModerationReport.status,
+            "created_at": ModerationReport.created_at,
+        },
+        [ModerationReport.created_at.desc()],
+    )
     items, meta = paginate_query(q, lambda m: m.to_dict())
     return api_success(items, meta)
 
@@ -1080,7 +1153,18 @@ def admin_list_support_tickets():
                 SupportTicket.order_reference.ilike(like_q),
             )
         )
-    q = q.order_by(SupportTicket.created_at.desc())
+    q = apply_sort(
+        q,
+        {
+            "ticket_reference": SupportTicket.ticket_reference,
+            "category": SupportTicket.category,
+            "contact_name": SupportTicket.contact_name,
+            "subject": SupportTicket.subject,
+            "status": SupportTicket.status,
+            "created_at": SupportTicket.created_at,
+        },
+        [SupportTicket.created_at.desc()],
+    )
     items, meta = paginate_query(q, lambda t: t.to_dict())
     return api_success(items, meta)
 
@@ -1290,7 +1374,15 @@ def admin_list_audit_logs():
             )
         )
     q = _apply_date_range(q, AuditLog.created_at)
-    q = q.order_by(AuditLog.created_at.desc())
+    q = apply_sort(
+        q,
+        {
+            "created_at": AuditLog.created_at,
+            "action": AuditLog.action,
+            "entity_type": AuditLog.entity_type,
+        },
+        [AuditLog.created_at.desc()],
+    )
     items, meta = paginate_query(q, lambda a: a.to_dict(), default_per_page=30)
     return api_success(items, meta)
 

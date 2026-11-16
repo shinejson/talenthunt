@@ -2,8 +2,8 @@
   'use strict';
 
   angular.module('talentHuntApp')
-    .controller('AdminUsersController', ['ApiService', 'ToastService', 'AdminFilterUtils',
-      function (ApiService, ToastService, AdminFilterUtils) {
+    .controller('AdminUsersController', ['ApiService', 'ToastService', 'AdminFilterUtils', 'DataTableSource',
+      function (ApiService, ToastService, AdminFilterUtils, DataTableSource) {
         var vm = this;
         vm.users = [];
         vm.availableRoles = [];
@@ -26,17 +26,19 @@
           vm.load(1);
         };
 
-        vm.load = function (page) {
-          var params = AdminFilterUtils.cleanParams(vm.filters);
-          params.page = page || 1;
-          ApiService.get('/admin/users', params).then(function (res) {
+        // DataTables (th-datatable) requests each page, page size and column sort from the API.
+        vm.table = DataTableSource.server('/admin/users',
+          function () { return AdminFilterUtils.cleanParams(vm.filters); },
+          function (res) {
             vm.users = res.data || [];
             vm.meta = res.meta || {};
             if (res.meta && res.meta.available_roles && res.meta.available_roles.length) {
               vm.availableRoles = res.meta.available_roles;
             }
           });
-        };
+
+        // load(1) restarts from the first page (filters changed); any other page refreshes in place.
+        vm.load = function (page) { vm.table.load(page); };
 
         vm.openRoleEditor = function (u) {
           vm.editingUser = u;
@@ -65,12 +67,10 @@
             vm.load(vm.meta.page);
           }, function (err) { ToastService.error(err.message); });
         };
-
-        vm.load(1);
       }
     ])
-    .controller('AdminModerationController', ['ApiService', 'PermissionsService', 'ToastService', 'AdminFilterUtils',
-      function (ApiService, PermissionsService, ToastService, AdminFilterUtils) {
+    .controller('AdminModerationController', ['ApiService', 'PermissionsService', 'ToastService', 'AdminFilterUtils', 'DataTableSource',
+      function (ApiService, PermissionsService, ToastService, AdminFilterUtils, DataTableSource) {
         var vm = this;
         vm.perms = PermissionsService;
         vm.reports = [];
@@ -78,23 +78,28 @@
         vm.modFilters = { q: '', entity_type: '', status: '' };
         vm.ticketFilters = { q: '', category: '', status: '' };
 
-        vm.loadModeration = function () {
-          if (!vm.perms.canModerate()) return;
-          ApiService.get('/admin/moderation', AdminFilterUtils.cleanParams(vm.modFilters)).then(function (res) {
+        vm.modMeta = {};
+        vm.ticketMeta = {};
+
+        // Both queues are paged by DataTables (th-datatable), one API request per page.
+        // The moderation table only exists for roles that may moderate (see the template).
+        vm.modTable = DataTableSource.server('/admin/moderation',
+          function () { return AdminFilterUtils.cleanParams(vm.modFilters); },
+          function (res) {
             vm.reports = res.data || [];
+            vm.modMeta = res.meta || {};
           });
-        };
 
-        vm.loadTickets = function () {
-          ApiService.get('/admin/support-tickets', AdminFilterUtils.cleanParams(vm.ticketFilters)).then(function (res) {
+        vm.ticketTable = DataTableSource.server('/admin/support-tickets',
+          function () { return AdminFilterUtils.cleanParams(vm.ticketFilters); },
+          function (res) {
             vm.tickets = res.data || [];
+            vm.ticketMeta = res.meta || {};
           });
-        };
 
-        vm.load = function () {
-          vm.loadModeration();
-          vm.loadTickets();
-        };
+        // load*(1) restarts from the first page (filters changed); load*() refreshes in place.
+        vm.loadModeration = function (page) { vm.modTable.load(page); };
+        vm.loadTickets = function (page) { vm.ticketTable.load(page); };
 
         vm.activeModFilterCount = function () {
           return AdminFilterUtils.countActive(vm.modFilters);
@@ -102,7 +107,7 @@
 
         vm.resetModFilters = function () {
           vm.modFilters = { q: '', entity_type: '', status: '' };
-          vm.loadModeration();
+          vm.loadModeration(1);
         };
 
         vm.activeTicketFilterCount = function () {
@@ -111,7 +116,7 @@
 
         vm.resetTicketFilters = function () {
           vm.ticketFilters = { q: '', category: '', status: '' };
-          vm.loadTickets();
+          vm.loadTickets(1);
         };
 
         vm.resolveReport = function (r, st) {
@@ -131,8 +136,6 @@
             vm.loadTickets();
           });
         };
-
-        vm.load();
       }
     ])
     .controller('AdminSettingsController', ['ApiService', 'ToastService', 'AdminFilterUtils',
@@ -245,12 +248,11 @@
         '        </div>',
         '      </div>',
 
-        '      <div ng-if="!vm.users.length" class="empty-state">No user accounts match the selected filters.</div>',
-        '      <div class="table-responsive" ng-if="vm.users.length">',
-        '        <table class="data-table">',
-        '          <thead><tr><th>Name</th><th>Contact</th><th>Roles</th><th>Status</th><th>Actions</th></tr></thead>',
+        '      <div class="table-responsive">',
+        '        <table class="data-table" th-datatable="vm.table" dt-row="u" dt-empty="No user accounts match the selected filters.">',
+        '          <thead><tr><th dt-sort="full_name">Name</th><th dt-sort="email">Contact</th><th>Roles</th><th dt-sort="status">Status</th><th>Actions</th></tr></thead>',
         '          <tbody>',
-        '            <tr ng-repeat="u in vm.users">',
+        '            <tr>',
         '              <td><strong>{{ u.full_name }}</strong><div class="muted" style="font-size:0.76rem;" ng-if="u.location">{{ u.location }}</div></td>',
         '              <td>{{ u.email || u.phone }}</td>',
         '              <td><code>{{ u.roles.join(", ") }}</code></td>',
@@ -263,7 +265,6 @@
         '          </tbody>',
         '        </table>',
         '      </div>',
-        '      <th-pagination meta="vm.meta" on-page="vm.load(page)"></th-pagination>',
         '    </div>',
         '  </div>',
         '</div>'
@@ -283,7 +284,7 @@
         '        <div class="filter-bar-top">',
         '          <span class="filter-bar-title"><th-icon name="filter" size="14"></th-icon><span>Filter Moderation Cases</span></span>',
         '          <div class="inline-actions">',
-        '            <span class="filter-count-pill">{{ vm.reports.length }} case(s)</span>',
+        '            <span class="filter-count-pill">{{ vm.modMeta.total !== undefined ? vm.modMeta.total : vm.reports.length }} case(s)</span>',
         '            <button type="button" class="btn btn-sm btn-secondary" ng-if="vm.activeModFilterCount() > 0" ng-click="vm.resetModFilters()"><th-icon name="rotate-ccw" size="14"></th-icon><span>Reset</span></button>',
         '          </div>',
         '        </div>',
@@ -292,12 +293,12 @@
         '            <label class="filter-label">Search Cases</label>',
         '            <div class="search-input-wrap">',
         '              <th-icon name="search" size="15"></th-icon>',
-        '              <input type="text" class="form-control form-control-sm" ng-model="vm.modFilters.q" ng-model-options="{ debounce: 250 }" ng-change="vm.loadModeration()" placeholder="Reason, details, entity ID..." />',
+        '              <input type="text" class="form-control form-control-sm" ng-model="vm.modFilters.q" ng-model-options="{ debounce: 250 }" ng-change="vm.loadModeration(1)" placeholder="Reason, details, entity ID..." />',
         '            </div>',
         '          </div>',
         '          <div class="filter-field">',
         '            <label class="filter-label">Entity Type</label>',
-        '            <select class="form-control form-control-sm" ng-model="vm.modFilters.entity_type" ng-change="vm.loadModeration()">',
+        '            <select class="form-control form-control-sm" ng-model="vm.modFilters.entity_type" ng-change="vm.loadModeration(1)">',
         '              <option value="">All Types</option>',
         '              <option value="SUBMISSION">SUBMISSION</option>',
         '              <option value="NOMINEE">NOMINEE</option>',
@@ -306,7 +307,7 @@
         '          </div>',
         '          <div class="filter-field">',
         '            <label class="filter-label">Status</label>',
-        '            <select class="form-control form-control-sm" ng-model="vm.modFilters.status" ng-change="vm.loadModeration()">',
+        '            <select class="form-control form-control-sm" ng-model="vm.modFilters.status" ng-change="vm.loadModeration(1)">',
         '              <option value="">All Statuses</option>',
         '              <option value="OPEN">OPEN</option>',
         '              <option value="INVESTIGATING">INVESTIGATING</option>',
@@ -317,12 +318,11 @@
         '        </div>',
         '      </div>',
 
-        '      <div ng-if="!vm.reports.length" class="empty-state">No moderation or anomaly cases match the selected filters.</div>',
-        '      <div class="table-responsive" ng-if="vm.reports.length">',
-        '        <table class="data-table">',
-        '          <thead><tr><th>Type</th><th>Reason</th><th>Details</th><th>Status</th><th>Action</th></tr></thead>',
+        '      <div class="table-responsive">',
+        '        <table class="data-table" th-datatable="vm.modTable" dt-row="r" dt-page-length="10" dt-empty="No moderation or anomaly cases match the selected filters.">',
+        '          <thead><tr><th dt-sort="entity_type">Type</th><th dt-sort="reason">Reason</th><th>Details</th><th dt-sort="status">Status</th><th>Action</th></tr></thead>',
         '          <tbody>',
-        '            <tr ng-repeat="r in vm.reports">',
+        '            <tr>',
         '              <td>{{ r.entity_type }}</td><td><strong>{{ r.reason }}</strong></td><td>{{ r.details }}</td>',
         '              <td><th-status-badge status="r.status"></th-status-badge></td>',
         '              <td class="inline-actions"><button type="button" class="btn btn-sm btn-primary" ng-click="vm.resolveReport(r, \'ACTIONED\')">Action</button><button type="button" class="btn btn-sm btn-secondary" ng-click="vm.resolveReport(r, \'DISMISSED\')">Dismiss</button></td>',
@@ -342,7 +342,7 @@
         '        <div class="filter-bar-top">',
         '          <span class="filter-bar-title"><th-icon name="filter" size="14"></th-icon><span>Filter Support Tickets</span></span>',
         '          <div class="inline-actions">',
-        '            <span class="filter-count-pill">{{ vm.tickets.length }} ticket(s)</span>',
+        '            <span class="filter-count-pill">{{ vm.ticketMeta.total !== undefined ? vm.ticketMeta.total : vm.tickets.length }} ticket(s)</span>',
         '            <button type="button" class="btn btn-sm btn-secondary" ng-if="vm.activeTicketFilterCount() > 0" ng-click="vm.resetTicketFilters()"><th-icon name="rotate-ccw" size="14"></th-icon><span>Reset</span></button>',
         '          </div>',
         '        </div>',
@@ -351,12 +351,12 @@
         '            <label class="filter-label">Search Tickets</label>',
         '            <div class="search-input-wrap">',
         '              <th-icon name="search" size="15"></th-icon>',
-        '              <input type="text" class="form-control form-control-sm" ng-model="vm.ticketFilters.q" ng-model-options="{ debounce: 250 }" ng-change="vm.loadTickets()" placeholder="Ticket ref, subject, contact, order ref..." />',
+        '              <input type="text" class="form-control form-control-sm" ng-model="vm.ticketFilters.q" ng-model-options="{ debounce: 250 }" ng-change="vm.loadTickets(1)" placeholder="Ticket ref, subject, contact, order ref..." />',
         '            </div>',
         '          </div>',
         '          <div class="filter-field">',
         '            <label class="filter-label">Category</label>',
-        '            <select class="form-control form-control-sm" ng-model="vm.ticketFilters.category" ng-change="vm.loadTickets()">',
+        '            <select class="form-control form-control-sm" ng-model="vm.ticketFilters.category" ng-change="vm.loadTickets(1)">',
         '              <option value="">All Categories</option>',
         '              <option value="PAYMENT">PAYMENT</option>',
         '              <option value="VOTING">VOTING</option>',
@@ -366,7 +366,7 @@
         '          </div>',
         '          <div class="filter-field">',
         '            <label class="filter-label">Status</label>',
-        '            <select class="form-control form-control-sm" ng-model="vm.ticketFilters.status" ng-change="vm.loadTickets()">',
+        '            <select class="form-control form-control-sm" ng-model="vm.ticketFilters.status" ng-change="vm.loadTickets(1)">',
         '              <option value="">All Statuses</option>',
         '              <option value="OPEN">OPEN</option>',
         '              <option value="IN_PROGRESS">IN_PROGRESS</option>',
@@ -377,12 +377,11 @@
         '        </div>',
         '      </div>',
 
-        '      <div ng-if="!vm.tickets.length" class="empty-state">No support tickets match the selected filters.</div>',
-        '      <div class="table-responsive" ng-if="vm.tickets.length">',
-        '        <table class="data-table">',
-        '          <thead><tr><th>Ref</th><th>Category</th><th>Contact</th><th>Subject</th><th>Status</th><th></th></tr></thead>',
+        '      <div class="table-responsive">',
+        '        <table class="data-table" th-datatable="vm.ticketTable" dt-row="t" dt-page-length="10" dt-empty="No support tickets match the selected filters.">',
+        '          <thead><tr><th dt-sort="ticket_reference">Ref</th><th dt-sort="category">Category</th><th dt-sort="contact_name">Contact</th><th dt-sort="subject">Subject</th><th dt-sort="status">Status</th><th></th></tr></thead>',
         '          <tbody>',
-        '            <tr ng-repeat="t in vm.tickets">',
+        '            <tr>',
         '              <td><code>{{ t.ticket_reference }}</code></td><td>{{ t.category }}</td><td>{{ t.contact_name }} ({{ t.contact_phone || t.contact_email }})</td><td>{{ t.subject }}</td>',
         '              <td><th-status-badge status="t.status"></th-status-badge></td>',
         '              <td><button type="button" class="btn btn-sm btn-primary" ng-click="vm.resolveTicket(t, \'RESOLVED\')">Resolve</button></td>',

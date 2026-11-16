@@ -3,7 +3,7 @@
 Implementation of the **Talent Hunt Platform PRD & Technical Design (`design.md`)** built with:
 
 - **Backend:** Python 3.11+ & Flask (`Flask`, `Flask-SQLAlchemy`, `Flask-Migrate`, `Marshmallow`, `Flask-Limiter`, `Flask-CORS`, `PyJWT`, `qrcode`, `Pillow`, `Gunicorn`)
-- **Frontend:** AngularJS 1.x (`angular@1.8.3`, `angular-route@1.8.3`, `angular-sanitize@1.8.3`, `Chart.js`)
+- **Frontend:** AngularJS 1.x (`angular@1.8.3`, `angular-route@1.8.3`, `angular-sanitize@1.8.3`, `Chart.js`, `DataTables 3` — vendored in `frontend/vendor`, no jQuery or CDN)
 - **Database:** PostgreSQL-compatible SQLAlchemy schema (`DATABASE_URL=postgresql://...`), defaulting to local SQLite (`backend/talent_hunt.db`) for zero-config local development.
 
 ---
@@ -54,3 +54,36 @@ PYTHONPATH=backend .venv/bin/python backend/wsgi.py
 | **Moderator** | `moderator@stagelight.gh` | `Moderator@2026!` |
 | **Nominee (Ama Gold)** | `ama@stagelight.gh` | `Nominee@2026!` |
 | **Applicant (Benaiah)** | `applicant@stagelight.gh` | `Applicant@2026!` |
+
+---
+
+## Data Tables & Pagination
+
+Every table on the admin console and the applicant/nominee portal is rendered by
+[DataTables](https://datatables.net) through the `th-datatable` directive
+(`frontend/app/components/datatable/datatable.directive.js`). DataTables owns the page-size
+selector, numbered paging, the "Showing X to Y of Z" summary and column ordering; each row is
+still an ordinary AngularJS template, so buttons, filters and components keep working.
+
+- **Server-side tables** (submissions, nominees, vote ledger, orders, payments, users, moderation
+  cases, support tickets, audit logs): DataTables requests one page at a time from the API with
+  `page`, `per_page` (max 100) and, when a column header is clicked, `sort_by` + `sort_dir=asc|desc`.
+  Sortable columns are whitelisted per endpoint (`apply_sort` in `backend/app/utils/pagination.py`).
+
+  ```js
+  vm.table = DataTableSource.server('/admin/orders',
+    function () { return AdminFilterUtils.cleanParams(vm.filters); },   // current filter values
+    function (res) { vm.meta = res.meta || {}; });                      // optional, after each page
+  vm.table.load(1);   // filters changed: back to page 1      vm.table.load();   // refresh in place
+  ```
+  ```html
+  <table class="data-table" th-datatable="vm.table" dt-row="o" dt-empty="No orders found.">
+    <thead><tr><th dt-sort="public_reference">Order Ref</th><th>Nominee</th></tr></thead>
+    <tbody><tr><td>{{ o.public_reference }}</td><td>{{ o.nominee_name }}</td></tr></tbody>
+  </table>
+  ```
+- **Client-side tables** (categories, rounds, vote packages, sponsors & partners, elimination
+  standings, report previews, webhook events, dashboard and portal lists): the list is already
+  loaded, so pass it with `dt-data="vm.categories"` and DataTables pages and sorts it in the browser.
+
+After upgrading the package, run `npm run sync-vendor` in `frontend/` to refresh the vendored copy.

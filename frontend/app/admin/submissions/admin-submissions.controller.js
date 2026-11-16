@@ -2,8 +2,8 @@
   'use strict';
 
   angular.module('talentHuntApp')
-    .controller('AdminSubmissionsController', ['ApiService', 'PermissionsService', 'ToastService', 'AdminFilterUtils',
-      function (ApiService, PermissionsService, ToastService, AdminFilterUtils) {
+    .controller('AdminSubmissionsController', ['ApiService', 'PermissionsService', 'ToastService', 'AdminFilterUtils', 'DataTableSource',
+      function (ApiService, PermissionsService, ToastService, AdminFilterUtils, DataTableSource) {
         var vm = this;
         vm.perms = PermissionsService;
         vm.items = [];
@@ -56,17 +56,26 @@
             date_to: null
           };
           vm.loadCategories();
+          vm.onSortChange();
+        };
+
+        // The column sort chosen in the table wins over the "Sort By" filter, so drop it when
+        // the filter is used.
+        vm.onSortChange = function () {
+          vm.table.clearOrder();
           vm.load(1);
         };
 
-        vm.load = function (page) {
-          var params = AdminFilterUtils.cleanParams(vm.filters);
-          params.page = page || 1;
-          ApiService.get('/admin/submissions', params).then(function (res) {
+        // DataTables (th-datatable) requests each page, page size and column sort from the API.
+        vm.table = DataTableSource.server('/admin/submissions',
+          function () { return AdminFilterUtils.cleanParams(vm.filters); },
+          function (res) {
             vm.items = res.data || [];
             vm.meta = res.meta || {};
           });
-        };
+
+        // load(1) restarts from the first page (filters changed); any other page refreshes in place.
+        vm.load = function (page) { vm.table.load(page); };
 
         vm.inspect = function (item) {
           ApiService.get('/admin/submissions/' + item.id).then(function (res) {
@@ -98,8 +107,6 @@
             vm.load(vm.meta.page);
           }, function (err) { ToastService.error(err.message); });
         };
-
-        vm.load(1);
       }
     ])
     .run(['$templateCache', function ($templateCache) {
@@ -167,7 +174,7 @@
         '          </div>',
         '          <div class="filter-field">',
         '            <label class="filter-label">Sort By</label>',
-        '            <select class="form-control form-control-sm" ng-model="vm.filters.sort" ng-change="vm.load(1)">',
+        '            <select class="form-control form-control-sm" ng-model="vm.filters.sort" ng-change="vm.onSortChange()">',
         '              <option value="newest">Newest First</option>',
         '              <option value="oldest">Oldest First</option>',
         '              <option value="stage_name">Stage Name (A-Z)</option>',
@@ -184,12 +191,11 @@
         '        </div>',
         '      </div>',
 
-        '      <div ng-if="!vm.items.length" class="empty-state">No submissions match the selected filters.</div>',
-        '      <div class="table-responsive" ng-if="vm.items.length">',
-        '        <table class="data-table">',
-        '          <thead><tr><th>Ref</th><th>Applicant / Stage Name</th><th>Category</th><th>Avg Judge Score</th><th>Status</th><th></th></tr></thead>',
+        '      <div class="table-responsive">',
+        '        <table class="data-table" th-datatable="vm.table" dt-row="a" dt-empty="No submissions match the selected filters.">',
+        '          <thead><tr><th dt-sort="reference_no">Ref</th><th dt-sort="stage_name">Applicant / Stage Name</th><th dt-sort="category_name">Category</th><th>Avg Judge Score</th><th dt-sort="status">Status</th><th></th></tr></thead>',
         '          <tbody>',
-        '            <tr ng-repeat="a in vm.items">',
+        '            <tr>',
         '              <td><code>{{ a.reference_no }}</code></td>',
         '              <td><strong>{{ a.stage_name }}</strong><div class="muted" style="font-size:0.8rem;">{{ a.applicant_name }}</div></td>',
         '              <td>{{ a.category_name }}</td>',
@@ -200,7 +206,6 @@
         '          </tbody>',
         '        </table>',
         '      </div>',
-        '      <th-pagination meta="vm.meta" on-page="vm.load(page)"></th-pagination>',
         '    </div>',
 
         '    <div class="card" ng-if="vm.selected">',

@@ -2,8 +2,8 @@
   'use strict';
 
   angular.module('talentHuntApp')
-    .controller('AdminNomineesController', ['ApiService', 'PermissionsService', 'ToastService', 'AdminFilterUtils',
-      function (ApiService, PermissionsService, ToastService, AdminFilterUtils) {
+    .controller('AdminNomineesController', ['ApiService', 'PermissionsService', 'ToastService', 'AdminFilterUtils', 'DataTableSource',
+      function (ApiService, PermissionsService, ToastService, AdminFilterUtils, DataTableSource) {
         var vm = this;
         vm.perms = PermissionsService;
         vm.items = [];
@@ -26,6 +26,13 @@
           ApiService.get('/admin/categories', params).then(function (res) { vm.categories = res.data || []; });
         };
         vm.loadCategories();
+
+        // The column sort chosen in the table wins over the "Sort By" filter, so drop it when
+        // the filter is used.
+        vm.onSortChange = function () {
+          vm.table.clearOrder();
+          vm.load(1);
+        };
 
         vm.onCompetitionChange = function () {
           vm.filters.category_id = '';
@@ -50,17 +57,19 @@
             sort: 'newest'
           };
           vm.loadCategories();
-          vm.load(1);
+          vm.onSortChange();
         };
 
-        vm.load = function (page) {
-          var params = AdminFilterUtils.cleanParams(vm.filters);
-          params.page = page || 1;
-          ApiService.get('/admin/nominees', params).then(function (res) {
+        // DataTables (th-datatable) requests each page, page size and column sort from the API.
+        vm.table = DataTableSource.server('/admin/nominees',
+          function () { return AdminFilterUtils.cleanParams(vm.filters); },
+          function (res) {
             vm.items = res.data || [];
             vm.meta = res.meta || {};
           });
-        };
+
+        // load(1) restarts from the first page (filters changed); any other page refreshes in place.
+        vm.load = function (page) { vm.table.load(page); };
 
         vm.toggleFeatured = function (n) {
           ApiService.patch('/admin/nominees/' + n.id, { is_featured: !n.is_featured }).then(function () {
@@ -92,8 +101,6 @@
             vm.load(vm.meta.page);
           }, function (err) { ToastService.error(err.message); });
         };
-
-        vm.load(1);
       }
     ])
     .run(['$templateCache', function ($templateCache) {
@@ -167,7 +174,7 @@
         '        </div>',
         '        <div class="filter-field">',
         '          <label class="filter-label">Sort By</label>',
-        '          <select class="form-control form-control-sm" ng-model="vm.filters.sort" ng-change="vm.load(1)">',
+        '          <select class="form-control form-control-sm" ng-model="vm.filters.sort" ng-change="vm.onSortChange()">',
         '            <option value="newest">Newest Nominated</option>',
         '            <option value="votes_desc">Most Total Votes</option>',
         '            <option value="name_asc">Name (A-Z)</option>',
@@ -176,12 +183,11 @@
         '      </div>',
         '    </div>',
 
-        '    <div ng-if="!vm.items.length" class="empty-state">No nominees match the selected filters.</div>',
-        '    <div class="table-responsive" ng-if="vm.items.length">',
-        '      <table class="data-table">',
-        '        <thead><tr><th>Nominee</th><th>Category</th><th>Active Voting Slug</th><th>Round Votes</th><th>Status</th><th>Controls</th></tr></thead>',
+        '    <div class="table-responsive">',
+        '      <table class="data-table" th-datatable="vm.table" dt-row="n" dt-empty="No nominees match the selected filters.">',
+        '        <thead><tr><th dt-sort="public_name">Nominee</th><th dt-sort="category_name">Category</th><th>Active Voting Slug</th><th>Round Votes</th><th dt-sort="status">Status</th><th>Controls</th></tr></thead>',
         '        <tbody>',
-        '          <tr ng-repeat="n in vm.items">',
+        '          <tr>',
         '            <td><a ng-href="/nominee/{{ n.public_slug }}"><strong>{{ n.public_name }}</strong></a><div class="muted" style="font-size:0.78rem;">Featured: {{ n.is_featured ? "Yes" : "No" }}</div></td>',
         '            <td>{{ n.category_name }}</td>',
         '            <td><code>{{ n.voting_slug }}</code></td>',
@@ -197,7 +203,6 @@
         '        </tbody>',
         '      </table>',
         '    </div>',
-        '    <th-pagination meta="vm.meta" on-page="vm.load(page)"></th-pagination>',
         '  </div>',
         '</div>'
       ].join(''));

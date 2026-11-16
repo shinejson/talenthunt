@@ -2,8 +2,8 @@
   'use strict';
 
   angular.module('talentHuntApp')
-    .controller('AdminVotesController', ['ApiService', 'PermissionsService', 'ToastService', 'AdminFilterUtils',
-      function (ApiService, PermissionsService, ToastService, AdminFilterUtils) {
+    .controller('AdminVotesController', ['ApiService', 'PermissionsService', 'ToastService', 'AdminFilterUtils', 'DataTableSource',
+      function (ApiService, PermissionsService, ToastService, AdminFilterUtils, DataTableSource) {
         var vm = this;
         vm.perms = PermissionsService;
         vm.entries = [];
@@ -32,14 +32,16 @@
           vm.load(1);
         };
 
-        vm.load = function (page) {
-          var params = AdminFilterUtils.cleanParams(vm.filters);
-          params.page = page || 1;
-          ApiService.get('/admin/votes', params).then(function (res) {
+        // DataTables (th-datatable) requests each page, page size and column sort from the API.
+        vm.table = DataTableSource.server('/admin/votes',
+          function () { return AdminFilterUtils.cleanParams(vm.filters); },
+          function (res) {
             vm.entries = res.data || [];
             vm.meta = res.meta || {};
           });
-        };
+
+        // load(1) restarts from the first page (filters changed); any other page refreshes in place.
+        vm.load = function (page) { vm.table.load(page); };
 
         vm.submitAdjustment = function () {
           ApiService.post('/admin/votes/adjustments', vm.adj).then(function () {
@@ -48,12 +50,10 @@
             vm.load(1);
           }, function (err) { ToastService.error(err.message); });
         };
-
-        vm.load(1);
       }
     ])
-    .controller('AdminOrdersController', ['ApiService', 'AdminFilterUtils',
-      function (ApiService, AdminFilterUtils) {
+    .controller('AdminOrdersController', ['ApiService', 'AdminFilterUtils', 'DataTableSource',
+      function (ApiService, AdminFilterUtils, DataTableSource) {
         var vm = this;
         vm.orders = [];
         vm.meta = {};
@@ -81,20 +81,18 @@
           vm.load(1);
         };
 
-        vm.load = function (page) {
-          var params = AdminFilterUtils.cleanParams(vm.filters);
-          params.page = page || 1;
-          ApiService.get('/admin/orders', params).then(function (res) {
+        vm.table = DataTableSource.server('/admin/orders',
+          function () { return AdminFilterUtils.cleanParams(vm.filters); },
+          function (res) {
             vm.orders = res.data || [];
             vm.meta = res.meta || {};
           });
-        };
 
-        vm.load(1);
+        vm.load = function (page) { vm.table.load(page); };
       }
     ])
-    .controller('AdminReconciliationController', ['ApiService', 'PermissionsService', 'ToastService', 'AdminFilterUtils',
-      function (ApiService, PermissionsService, ToastService, AdminFilterUtils) {
+    .controller('AdminReconciliationController', ['ApiService', 'PermissionsService', 'ToastService', 'AdminFilterUtils', 'DataTableSource',
+      function (ApiService, PermissionsService, ToastService, AdminFilterUtils, DataTableSource) {
         var vm = this;
         vm.perms = PermissionsService;
         vm.payments = [];
@@ -148,15 +146,15 @@
           });
         };
 
-        vm.load = function (page) {
-          var params = AdminFilterUtils.cleanParams(vm.filters);
-          params.page = page || 1;
-          ApiService.get('/admin/payments', params).then(function (res) {
+        vm.table = DataTableSource.server('/admin/payments',
+          function () { return AdminFilterUtils.cleanParams(vm.filters); },
+          function (res) {
             vm.payments = res.data || [];
             vm.meta = res.meta || {};
             vm.webhooks = (res.meta && res.meta.recent_webhooks) || [];
           });
-        };
+
+        vm.load = function (page) { vm.table.load(page); };
 
         vm.reconcileOne = function (p) {
           ApiService.post('/admin/payments/' + p.id + '/reconcile', {}).then(function (res) {
@@ -180,8 +178,6 @@
             vm.load(vm.meta.page);
           }, function (err) { ToastService.error(err.message); });
         };
-
-        vm.load(1);
       }
     ])
     .run(['$templateCache', function ($templateCache) {
@@ -257,12 +253,11 @@
         '        </div>',
         '      </div>',
 
-        '      <div ng-if="!vm.entries.length" class="empty-state">No vote ledger entries match the selected filters.</div>',
-        '      <div class="table-responsive" ng-if="vm.entries.length">',
-        '        <table class="data-table">',
-        '          <thead><tr><th>Timestamp</th><th>Type</th><th>Nominee</th><th>Round</th><th>Quantity</th><th>Order Ref</th><th>Reason / Approval</th></tr></thead>',
+        '      <div class="table-responsive">',
+        '        <table class="data-table" th-datatable="vm.table" dt-row="le" dt-empty="No vote ledger entries match the selected filters.">',
+        '          <thead><tr><th dt-sort="created_at">Timestamp</th><th dt-sort="entry_type">Type</th><th dt-sort="nominee_name">Nominee</th><th>Round</th><th dt-sort="quantity">Quantity</th><th>Order Ref</th><th>Reason / Approval</th></tr></thead>',
         '          <tbody>',
-        '            <tr ng-repeat="le in vm.entries">',
+        '            <tr>',
         '              <td>{{ le.created_at | date:"short" }}</td>',
         '              <td><th-status-badge status="le.entry_type"></th-status-badge></td>',
         '              <td><strong>{{ le.nominee_name }}</strong></td>',
@@ -274,7 +269,6 @@
         '          </tbody>',
         '        </table>',
         '      </div>',
-        '      <th-pagination meta="vm.meta" on-page="vm.load(page)"></th-pagination>',
         '    </div>',
         '  </div>',
         '</div>'
@@ -349,12 +343,11 @@
         '      </div>',
         '    </div>',
 
-        '    <div ng-if="!vm.orders.length" class="empty-state">No vote orders match the selected filters.</div>',
-        '    <div class="table-responsive" ng-if="vm.orders.length">',
-        '      <table class="data-table">',
-        '        <thead><tr><th>Order Ref</th><th>Receipt</th><th>Nominee</th><th>Votes</th><th>Amount</th><th>Status</th><th>Created</th></tr></thead>',
+        '    <div class="table-responsive">',
+        '      <table class="data-table" th-datatable="vm.table" dt-row="o" dt-empty="No vote orders match the selected filters.">',
+        '        <thead><tr><th dt-sort="public_reference">Order Ref</th><th dt-sort="receipt_code">Receipt</th><th dt-sort="nominee_name">Nominee</th><th dt-sort="vote_quantity">Votes</th><th dt-sort="amount">Amount</th><th dt-sort="status">Status</th><th dt-sort="created_at">Created</th></tr></thead>',
         '        <tbody>',
-        '          <tr ng-repeat="o in vm.orders">',
+        '          <tr>',
         '            <td><code>{{ o.public_reference }}</code></td>',
         '            <td><code>{{ o.receipt_code || "-" }}</code></td>',
         '            <td>{{ o.nominee_name }}</td>',
@@ -366,7 +359,6 @@
         '        </tbody>',
         '      </table>',
         '    </div>',
-        '    <th-pagination meta="vm.meta" on-page="vm.load(page)"></th-pagination>',
         '  </div>',
         '</div>'
       ].join(''));
@@ -436,12 +428,11 @@
         '        </div>',
         '      </div>',
 
-        '      <div ng-if="!vm.payments.length" class="empty-state">No payment records match the selected filters.</div>',
-        '      <div class="table-responsive" ng-if="vm.payments.length">',
-        '        <table class="data-table">',
-        '          <thead><tr><th>Provider Ref</th><th>Order</th><th>Nominee</th><th>Amount</th><th>Status</th><th>Actions</th></tr></thead>',
+        '      <div class="table-responsive">',
+        '        <table class="data-table" th-datatable="vm.table" dt-row="p" dt-empty="No payment records match the selected filters.">',
+        '          <thead><tr><th dt-sort="provider_reference">Provider Ref</th><th>Order</th><th>Nominee</th><th dt-sort="amount">Amount</th><th dt-sort="status">Status</th><th>Actions</th></tr></thead>',
         '          <tbody>',
-        '            <tr ng-repeat="p in vm.payments">',
+        '            <tr>',
         '              <td><code>{{ p.provider_reference }}</code></td>',
         '              <td><code>{{ p.order_reference }}</code></td>',
         '              <td>{{ p.nominee_name }} ({{ p.vote_quantity }}v)</td>',
@@ -455,7 +446,6 @@
         '          </tbody>',
         '        </table>',
         '      </div>',
-        '      <th-pagination meta="vm.meta" on-page="vm.load(page)"></th-pagination>',
         '    </div>',
 
         '    <div class="card" ng-if="vm.webhooks.length">',
@@ -496,11 +486,10 @@
         '          </div>',
         '        </div>',
         '      </div>',
-        '      <div ng-if="!vm.filteredWebhooks().length" class="empty-state">No webhook events match the selected filters.</div>',
-        '      <div class="table-responsive" ng-if="vm.filteredWebhooks().length">',
-        '        <table class="data-table">',
-        '          <thead><tr><th>Received</th><th>Provider</th><th>Event ID</th><th>Signature</th><th>Status</th><th>Notes</th></tr></thead>',
-        '          <tbody><tr ng-repeat="w in vm.filteredWebhooks()"><td>{{ w.received_at | date:"short" }}</td><td>{{ w.provider }}</td><td><code>{{ w.event_id }}</code></td><td>{{ w.signature_valid ? "Valid ✓" : "Invalid" }}</td><td><th-status-badge status="w.status"></th-status-badge></td><td>{{ w.notes }}</td></tr></tbody>',
+        '      <div class="table-responsive">',
+        '        <table class="data-table" th-datatable dt-data="vm.filteredWebhooks()" dt-row="w" dt-page-length="10" dt-empty="No webhook events match the selected filters.">',
+        '          <thead><tr><th dt-sort="w.received_at">Received</th><th dt-sort="w.provider">Provider</th><th>Event ID</th><th dt-sort="w.signature_valid">Signature</th><th dt-sort="w.status">Status</th><th>Notes</th></tr></thead>',
+        '          <tbody><tr><td>{{ w.received_at | date:"short" }}</td><td>{{ w.provider }}</td><td><code>{{ w.event_id }}</code></td><td>{{ w.signature_valid ? "Valid ✓" : "Invalid" }}</td><td><th-status-badge status="w.status"></th-status-badge></td><td>{{ w.notes }}</td></tr></tbody>',
         '        </table>',
         '      </div>',
         '    </div>',
