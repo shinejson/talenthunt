@@ -6,8 +6,15 @@ from app.models.competition import Category, Competition, Round
 from app.models.elimination import EliminationRun
 from app.models.nominee import Nominee
 from app.models.operations import ModerationReport, PlatformSetting, SupportTicket
+from app.models.partnership import PARTNER_CATEGORY_LIST, SPONSOR_TIER_LIST, SponsorPartner
 from app.policies.rbac import get_current_user
 from app.schemas import DomainError
+from app.services.partnership_service import (
+    create_partnership_inquiry,
+    get_collaboration_tracks,
+    get_sponsorship_packages,
+    query_public_orgs,
+)
 from app.services.voting_service import (
     compute_round_standings,
     get_incident_banner,
@@ -88,6 +95,13 @@ def public_home():
     ann_setting = PlatformSetting.query.filter_by(key="announcements").first()
     announcements = (ann_setting.value_json or {}).get("items", []) if ann_setting else []
 
+    featured_sponsors = query_public_orgs("SPONSOR", featured_only=True)
+    if not featured_sponsors:
+        featured_sponsors = query_public_orgs("SPONSOR")
+    featured_partners = query_public_orgs("PARTNER", featured_only=True)
+    if not featured_partners:
+        featured_partners = query_public_orgs("PARTNER")
+
     return api_success(
         {
             "platform_name": current_app.config.get("PLATFORM_NAME", "StageLight"),
@@ -96,6 +110,8 @@ def public_home():
             "active_competition": comp.to_dict(include_details=True) if comp else None,
             "active_round": active_round.to_dict() if active_round else None,
             "featured_nominees": featured_nominees,
+            "featured_sponsors": [s.to_public_dict() for s in featured_sponsors[:6]],
+            "featured_partners": [p.to_public_dict() for p in featured_partners[:6]],
             "leaderboard": leaderboard,
             "announcements": announcements,
             "faqs": DEFAULT_FAQS,
@@ -143,6 +159,14 @@ def get_public_competition(slug: str):
 
     data = comp.to_dict(include_details=True)
     data["published_result_rounds"] = published_rounds
+    if comp.status != "ARCHIVED":
+        comp_sponsors = query_public_orgs("SPONSOR", competition_ref=comp.id, include_platform_wide=True)
+        comp_partners = query_public_orgs("PARTNER", competition_ref=comp.id, include_platform_wide=True)
+        data["sponsors"] = [s.to_public_dict() for s in comp_sponsors]
+        data["partners"] = [p.to_public_dict() for p in comp_partners]
+    else:
+        data["sponsors"] = []
+        data["partners"] = []
     return api_success(data)
 
 
@@ -390,3 +414,130 @@ def submit_abuse_report():
     db.session.add(rep)
     db.session.commit()
     return api_success({"report_id": rep.id, "status": rep.status}, status_code=201)
+
+
+def _list_public_competition_options() -> list[dict]:
+    comps = (
+        Competition.query.filter(Competition.status.notin_(["DRAFT", "ARCHIVED"]))
+        .order_by(Competition.created_at.desc())
+        .all()
+    )
+    return [{"id": c.id, "title": c.title, "slug": c.slug, "status": c.status} for c in comps]
+
+
+@public_bp.get("/sponsors")
+def list_public_sponsors():
+    tier = (request.args.get("tier") or "").strip().upper() or None
+    comp_ref = (request.args.get("competition") or "").strip() or None
+    featured_only = (request.args.get("featured") or "").strip().lower() in ("true", "1", "yes")
+    search = (request.args.get("q") or "").strip() or None
+    strict_comp = (request.args.get("strict_competition") or "").strip().lower() in ("true", "1", "yes")
+
+    all_active_sponsors = query_public_orgs("SPONSOR")
+    all_active_partners = query_public_orgs("PARTNER")
+    counts_by_tier: dict[str, int] = {}
+    for sp in all_active_sponsors:
+        counts_by_tier[sp.tier_or_category] = counts_by_tier.get(sp.tier_or_category, 0) + 1
+
+    items = query_public_orgs(
+        "SPONSOR",
+        tier_or_category=tier,
+        competition_ref=comp_ref,
+        featured_only=featured_only,
+        search=search,
+        include_platform_wide=not strict_comp,
+    )
+    return api_success(
+        {
+            "sponsors": [s.to_public_dict() for s in items],
+            "tiers": SPONSOR_TIER_LIST,
+            "packages": get_sponsorship_packages(),
+            "competitions": _list_public_competition_options(),
+            "stats": {
+                "filtered_count": len(items),
+                "total_sponsors": len(all_active_sponsors),
+                "total_partners": len(all_active_partners),
+                "counts_by_tier": counts_by_tier,
+            },
+        }
+    )
+
+
+@public_bp.get("/sponsors/<slug>")
+def get_public_sponsor_detail(slug: str):
+    org = SponsorPartner.query.filter_by(slug=slug, kind="SPONSOR", status="ACTIVE").first()
+    if not org:
+        raise DomainError("NOT_FOUND", "Sponsor profile not found.", 404)
+    if org.competition and org.competition.status in ("DRAFT", "ARCHIVED"):
+        raise DomainError("NOT_FOUND", "Sponsor profile not found.", 404)
+
+    related = [s.to_public_dict() for s in query_public_orgs("SPONSOR") if s.id != org.id][:4]
+    return api_success(
+        {
+            "organization": org.to_public_dict(),
+            "related": related,
+        }
+    )
+
+
+@public_bp.get("/partners")
+def list_public_partners():
+    category = (request.args.get("category") or "").strip().upper() or None
+    comp_ref = (request.args.get("competition") or "").strip() or None
+    featured_only = (request.args.get("featured") or "").strip().lower() in ("true", "1", "yes")
+    search = (request.args.get("q") or "").strip() or None
+    strict_comp = (request.args.get("strict_competition") or "").strip().lower() in ("true", "1", "yes")
+
+    all_active_partners = query_public_orgs("PARTNER")
+    all_active_sponsors = query_public_orgs("SPONSOR")
+    counts_by_category: dict[str, int] = {}
+    for pt in all_active_partners:
+        counts_by_category[pt.tier_or_category] = counts_by_category.get(pt.tier_or_category, 0) + 1
+
+    items = query_public_orgs(
+        "PARTNER",
+        tier_or_category=category,
+        competition_ref=comp_ref,
+        featured_only=featured_only,
+        search=search,
+        include_platform_wide=not strict_comp,
+    )
+    return api_success(
+        {
+            "partners": [p.to_public_dict() for p in items],
+            "categories": PARTNER_CATEGORY_LIST,
+            "collaboration_tracks": get_collaboration_tracks(),
+            "competitions": _list_public_competition_options(),
+            "stats": {
+                "filtered_count": len(items),
+                "total_partners": len(all_active_partners),
+                "total_sponsors": len(all_active_sponsors),
+                "counts_by_category": counts_by_category,
+            },
+        }
+    )
+
+
+@public_bp.get("/partners/<slug>")
+def get_public_partner_detail(slug: str):
+    org = SponsorPartner.query.filter_by(slug=slug, kind="PARTNER", status="ACTIVE").first()
+    if not org:
+        raise DomainError("NOT_FOUND", "Partner profile not found.", 404)
+    if org.competition and org.competition.status in ("DRAFT", "ARCHIVED"):
+        raise DomainError("NOT_FOUND", "Partner profile not found.", 404)
+
+    related = [p.to_public_dict() for p in query_public_orgs("PARTNER") if p.id != org.id][:4]
+    return api_success(
+        {
+            "organization": org.to_public_dict(),
+            "related": related,
+        }
+    )
+
+
+@public_bp.post("/public/partnership-inquiries")
+@limiter.limit("10 per minute")
+def submit_partnership_inquiry():
+    payload = request.get_json(silent=True) or {}
+    inquiry = create_partnership_inquiry(payload)
+    return api_success(inquiry.to_public_dict(), status_code=201)

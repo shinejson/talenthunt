@@ -11,7 +11,7 @@ Implementation of the **Talent Hunt Platform PRD & Technical Design (`design.md`
 ## Key Capabilities Implemented
 
 1. **Public Website & Discovery (`/`):**
-   - Responsive mobile-first landing page (360px+ viewport support), active competition spotlight, featured categories, searchable/filterable nominee directory (`/nominees`), public nominee demo profiles (`/nominee/:slug`), published round results & leaderboards (`/results`), FAQ, competition rules, terms, privacy, and support ticket submission (`/contact`).
+   - Responsive mobile-first landing page (360px+ viewport support), active competition spotlight, featured categories, searchable/filterable nominee directory (`/nominees`), public nominee demo profiles (`/nominee/:slug`), official sponsors directory & tier packages (`/sponsors`, `/sponsors/:slug`), strategic & ecosystem partners directory (`/partners`, `/partners/:slug`) with partnership inquiry submissions, published round results & leaderboards (`/results`), FAQ, competition rules, terms, privacy, and support ticket submission (`/contact`).
 2. **Authentication & Role-Based Access Control (RBAC):**
    - Roles enforced server-side: `VISITOR`, `APPLICANT`, `NOMINEE`, `REVIEWER`, `MODERATOR`, `COMPETITION_MANAGER`, `FINANCE_OFFICER`, `SUPER_ADMIN`.
    - Registration, login, contact verification, password recovery, session revocation on password change, and account deactivation.
