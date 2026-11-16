@@ -7,6 +7,7 @@ from app.models.competition import Category, Competition, Round, VotePackage
 from app.models.elimination import EliminationResult, EliminationRun
 from app.models.nominee import Nominee, RoundEntry
 from app.models.operations import PlatformSetting
+from app.models.partnership import PartnershipInquiry, SponsorPartner
 from app.models.user import User
 from app.models.voting import Order, Payment, VoteLedger
 from app.services.auth_service import ensure_roles_exist, grant_role
@@ -18,6 +19,7 @@ from app.utils.time_utils import utcnow
 def seed_demo_data_if_empty():
     ensure_roles_exist()
     if User.query.first() is not None:
+        seed_sponsors_partners_if_empty()
         return
 
     now = utcnow()
@@ -566,7 +568,508 @@ def seed_demo_data_if_empty():
             ),
         ]
     )
+    seed_sponsors_partners_if_empty(comp=comp, creator=manager, commit=False)
     db.session.commit()
+
+
+def seed_sponsors_partners_if_empty(comp: Competition | None = None, creator: User | None = None, commit: bool = True):
+    if SponsorPartner.query.first() is not None:
+        return
+
+    if comp is None:
+        comp = Competition.query.order_by(Competition.created_at.desc()).first()
+    if creator is None:
+        creator = User.query.filter_by(email="manager@stagelight.gh").first() or User.query.first()
+
+    creator_id = creator.id if creator else None
+    comp_id = comp.id if comp else None
+    now = utcnow()
+
+    demo_orgs = [
+        # --- OFFICIAL SPONSORS ---
+        SponsorPartner(
+            kind="SPONSOR",
+            name="GoldenCoast Bank Ghana",
+            slug="goldencoast-bank-ghana",
+            tier_or_category="TITLE",
+            competition_id=comp_id,
+            badge_label="Official Title & Grand Prize Sponsor",
+            tagline="Empowering Ghana's creative entrepreneurs from first audition to national stardom.",
+            description=(
+                "GoldenCoast Bank Ghana serves as the official headline sponsor of StageLight Ghana 2026, "
+                "underwriting the GHS 100,000 Grand Prize pool and delivering dedicated creative-economy "
+                "banking, royalty management workshops, and financial mentorship to every shortlisted nominee."
+            ),
+            contribution_summary="Underwrites the GHS 100,000 Championship Crown & Finalist Financial Bootcamps",
+            highlights_json=[
+                "GHS 100,000 Grand Finale Prize Pool",
+                "Zero-fee Creative Starter Accounts for Top 20 Nominees",
+                "16-Region Youth Financial Literacy Workshops",
+                "Grand Finale Trophy & Scholarship Presenter",
+            ],
+            quote_text=(
+                "Ghana's music, dance, and spoken-word talent is world-class. StageLight's ledger-verified "
+                "voting gives us total confidence that every cedi and every fan vote rewards genuine artistry."
+            ),
+            quote_author="Nana Kwame Ofori, Head of Brand & Creative Banking",
+            website_url="https://goldencoastbank.com.gh",
+            brand_initials="GCB",
+            accent_color="#d97706",
+            location="Ridge, Accra",
+            since_year=2024,
+            contact_name="Nana Kwame Ofori",
+            contact_email="sponsorships@goldencoastbank.com.gh",
+            contact_phone="+233302700100",
+            is_featured=True,
+            sort_order=10,
+            status="ACTIVE",
+            created_by=creator_id,
+        ),
+        SponsorPartner(
+            kind="SPONSOR",
+            name="Akwaaba Fiber & Telecom",
+            slug="akwaaba-fiber-telecom",
+            tier_or_category="PLATINUM",
+            competition_id=comp_id,
+            badge_label="Official Connectivity & Livestream Sponsor",
+            tagline="High-speed fiber and 5G connectivity bringing every audition performance to every screen.",
+            description=(
+                "Akwaaba Fiber & Telecom powers zero-rated audition upload kiosks at regional community hubs "
+                "and delivers ultra-low-latency HD livestreams for the National Quarterfinals and Grand Finale, "
+                "connecting supporters across Ghana and the global diaspora."
+            ),
+            contribution_summary="Provides Free Regional Demo Upload Hotspots & 4K Live Show Streaming",
+            highlights_json=[
+                "Zero-rated demo upload booths in 10 regional capitals",
+                "Dedicated fiber uplinks for live Quarterfinal & Finale nights",
+                "Unlimited creator data bundles for all advancing finalists",
+            ],
+            quote_text=(
+                "A brilliant singer in Tamale or Cape Coast deserves the same crystal-clear spotlight as a "
+                "performer in Accra. Together with StageLight, we keep every stage connected."
+            ),
+            quote_author="Abena Kyei-Baffour, Chief Commercial Officer",
+            website_url="https://akwaabatelecom.gh",
+            brand_initials="AFT",
+            accent_color="#0284c7",
+            location="Airport City, Accra",
+            since_year=2024,
+            contact_name="Abena Kyei-Baffour",
+            contact_email="brand@akwaabatelecom.gh",
+            contact_phone="+233302700200",
+            is_featured=True,
+            sort_order=20,
+            status="ACTIVE",
+            created_by=creator_id,
+        ),
+        SponsorPartner(
+            kind="SPONSOR",
+            name="Sankofa Tropical Beverages",
+            slug="sankofa-tropical-beverages",
+            tier_or_category="GOLD",
+            competition_id=comp_id,
+            badge_label="Official Audition Tour & Fan Zone Sponsor",
+            tagline="Crafted from Ghanaian pineapple, ginger, and hibiscus to refresh every live stage moment.",
+            description=(
+                "Sankofa Tropical Beverages brings vibrant outdoor fan zones, listening lounges, and backstage "
+                "artist hydration stations to every StageLight regional showcase from Takoradi and Kumasi to Accra."
+            ),
+            contribution_summary="Sponsors the Afrobeats & Highlife Category plus Live Fan Zone Experiences",
+            highlights_json=[
+                "Category Sponsor — Afrobeats & Highlife Vocals",
+                "Interactive outdoor fan zones & tasting bars at live shows",
+                "12-month brand ambassador contract for People's Choice standout",
+            ],
+            website_url="https://sankofadrinks.com.gh",
+            brand_initials="STB",
+            accent_color="#059669",
+            location="Tema Industrial Area, Greater Accra",
+            since_year=2025,
+            contact_name="Kojo Mensah-Bonsu",
+            contact_email="partnerships@sankofadrinks.com.gh",
+            contact_phone="+233303400310",
+            is_featured=True,
+            sort_order=30,
+            status="ACTIVE",
+            created_by=creator_id,
+        ),
+        SponsorPartner(
+            kind="SPONSOR",
+            name="Ashanti Shield Assurance",
+            slug="ashanti-shield-assurance",
+            tier_or_category="GOLD",
+            competition_id=None,
+            badge_label="Official Contestant Welfare & Event Sponsor",
+            tagline="Protecting Ghana's performers, instruments, and live productions nationwide.",
+            description=(
+                "Ashanti Shield Assurance provides comprehensive travel, health, performance-equipment, and "
+                "live-venue insurance across all StageLight competitions, ensuring artists and production teams "
+                "focus entirely on delivering unforgettable performances."
+            ),
+            contribution_summary="Covers Contestant Travel, Stage Equipment & Finale Production Assurance",
+            highlights_json=[
+                "Full travel & health cover for advancing regional nominees",
+                "Musical instrument & stage rig protection policy",
+                "GHS 15,000 Judge's Excellence Award underwriter",
+            ],
+            website_url="https://ashantishield.com.gh",
+            brand_initials="ASA",
+            accent_color="#b45309",
+            location="Adum, Kumasi & Accra",
+            since_year=2025,
+            contact_name="Maame Yaa Prempeh",
+            contact_email="corporate@ashantishield.com.gh",
+            contact_phone="+233322090400",
+            is_featured=True,
+            sort_order=40,
+            status="ACTIVE",
+            created_by=creator_id,
+        ),
+        SponsorPartner(
+            kind="SPONSOR",
+            name="Kente Loom Couture",
+            slug="kente-loom-couture",
+            tier_or_category="SILVER",
+            competition_id=comp_id,
+            badge_label="Official Stage Wardrobe & Styling Sponsor",
+            tagline="Contemporary Ghanaian fashion woven from authentic Bonwire and Agotime heritage textiles.",
+            description=(
+                "Kente Loom Couture outfits StageLight hosts, Quarterfinalists, and Grand Finale contenders in "
+                "bespoke modern silhouettes celebrating Ghanaian craftsmanship on camera and under stage lights."
+            ),
+            contribution_summary="Designs Custom Finale Stage Wardrobe & Editorial Portrait Styling",
+            highlights_json=[
+                "Custom Grand Finale looks for all Top 3 contenders",
+                "Dedicated backstage styling team for live broadcasts",
+            ],
+            website_url="https://kenteloom.gh",
+            brand_initials="KLC",
+            accent_color="#7c3aed",
+            location="Osu, Accra",
+            since_year=2025,
+            contact_name="Dzifa Agbeko",
+            contact_email="studio@kenteloom.gh",
+            contact_phone="+233244800510",
+            is_featured=False,
+            sort_order=50,
+            status="ACTIVE",
+            created_by=creator_id,
+        ),
+        SponsorPartner(
+            kind="SPONSOR",
+            name="VoltaSun Clean Energy",
+            slug="voltasun-clean-energy",
+            tier_or_category="SILVER",
+            competition_id=None,
+            badge_label="Official Clean Stage Power Sponsor",
+            tagline="Silent hybrid solar-battery systems keeping Ghana's stages bright without interruption.",
+            description=(
+                "VoltaSun Clean Energy supplies commercial solar-hybrid battery arrays for outdoor audition "
+                "showcases and broadcast vans, guaranteeing zero-downtime sound, lighting, and voting terminals."
+            ),
+            contribution_summary="Delivers Uninterrupted Solar-Hybrid Stage & Broadcast Power",
+            highlights_json=[
+                "100% uptime silent battery rigs for regional showcases",
+                "Low-carbon live production power footprint",
+            ],
+            website_url="https://voltasunenergy.gh",
+            brand_initials="VSE",
+            accent_color="#0d9488",
+            location="Ho, Volta & Tema",
+            since_year=2026,
+            contact_name="Selorm Gbedemah",
+            contact_email="events@voltasunenergy.gh",
+            contact_phone="+233244800620",
+            is_featured=False,
+            sort_order=60,
+            status="ACTIVE",
+            created_by=creator_id,
+        ),
+        SponsorPartner(
+            kind="SPONSOR",
+            name="Savannah Gold Shea Collective",
+            slug="savannah-gold-shea-collective",
+            tier_or_category="SUPPORTING",
+            competition_id=comp_id,
+            badge_label="Northern Belt Audition & Backstage Supporter",
+            tagline="Women-led organic shea skincare and travel bursaries uplifting Northern Ghana creatives.",
+            description=(
+                "Founded by women's cooperatives in Tamale and Bolgatanga, Savannah Gold Shea Collective funds "
+                "inter-city travel stipends for Northern belt auditionees and curates backstage grooming kits."
+            ),
+            contribution_summary="Provides Northern Audition Travel Bursaries & Nominee Care Hampers",
+            highlights_json=[
+                "Travel bursaries for Tamale, Wa & Bolgatanga contestants",
+                "Artisanal grooming hampers for every official nominee",
+            ],
+            website_url="https://savannahgoldshea.gh",
+            brand_initials="SGS",
+            accent_color="#c2410c",
+            location="Tamale, Northern Region",
+            since_year=2026,
+            contact_name="Hajia Mariama Fuseini",
+            contact_email="hello@savannahgoldshea.gh",
+            contact_phone="+233372090730",
+            is_featured=False,
+            sort_order=70,
+            status="ACTIVE",
+            created_by=creator_id,
+        ),
+        # --- STRATEGIC & ECOSYSTEM PARTNERS ---
+        SponsorPartner(
+            kind="PARTNER",
+            name="GhanaPay Fintech Network",
+            slug="ghanapay-fintech-network",
+            tier_or_category="PAYMENT_FINTECH",
+            competition_id=None,
+            badge_label="Official Verified Voting Payment Partner",
+            tagline="Instant Mobile Money and Card settlement with cryptographic webhook verification.",
+            description=(
+                "GhanaPay Fintech Network powers StageLight's verified payment rails across MTN Mobile Money, "
+                "Telecel Cash, AT Money, and Visa/Mastercard. Every transaction delivers HMAC-signed settlement "
+                "notifications and server-to-server reconciliation directly into StageLight's immutable vote ledger."
+            ),
+            contribution_summary="Powers Verified Mobile Money & Card Checkout + Automated Reconciliation",
+            highlights_json=[
+                "MTN MoMo, Telecel Cash, AT Money & Card checkout in GHS",
+                "HMAC-SHA256 signed webhooks & real-time status verification",
+                "Automated pending-payment recovery & transparent refund hooks",
+            ],
+            quote_text=(
+                "Public talent voting only works when supporters trust every single vote. Our direct ledger "
+                "integration with StageLight guarantees zero phantom votes and instant digital receipts."
+            ),
+            quote_author="Kwabena Osei-Tutu, VP of Merchant Infrastructure",
+            website_url="https://ghanapay.com.gh",
+            brand_initials="GP",
+            accent_color="#059669",
+            location="Labone, Accra",
+            since_year=2024,
+            contact_name="Kwabena Osei-Tutu",
+            contact_email="integrations@ghanapay.com.gh",
+            contact_phone="+233302900110",
+            is_featured=True,
+            sort_order=10,
+            status="ACTIVE",
+            created_by=creator_id,
+        ),
+        SponsorPartner(
+            kind="PARTNER",
+            name="GoldStar TV & 99.7 FM",
+            slug="goldstar-tv-fm",
+            tier_or_category="BROADCAST_MEDIA",
+            competition_id=comp_id,
+            badge_label="Official National TV & Radio Broadcast Partner",
+            tagline="Syndicating StageLight auditions, nominee spotlights, and the live Finale across Ghana.",
+            description=(
+                "GoldStar TV & 99.7 FM brings weekly Friday-night StageLight audition recap shows, morning-drive "
+                "radio interviews for advancing nominees, and live free-to-air television coverage of the Quarterfinals "
+                "and December Grand Finale to millions of viewers nationwide."
+            ),
+            contribution_summary="Nationwide TV Broadcasts, Weekly Radio Spotlights & Red-Carpet Press",
+            highlights_json=[
+                "Free-to-air HD broadcast of Quarterfinals & Grand Finale",
+                "Weekly 99.7 FM acoustic live lounge for nominated acts",
+                "Syndicated regional radio updates across 14 affiliate stations",
+            ],
+            quote_text=(
+                "StageLight captures the raw heartbeat of Ghanaian performance culture — from Highlife acoustics "
+                "to spoken word and street choreography."
+            ),
+            quote_author="Ekow Blankson Jr., Director of Entertainment Programming",
+            website_url="https://goldstarmedia.gh",
+            brand_initials="GS",
+            accent_color="#dc2626",
+            location="Cantonments, Accra",
+            since_year=2024,
+            contact_name="Ekow Blankson Jr.",
+            contact_email="programming@goldstarmedia.gh",
+            contact_phone="+233302900220",
+            is_featured=True,
+            sort_order=20,
+            status="ACTIVE",
+            created_by=creator_id,
+        ),
+        SponsorPartner(
+            kind="PARTNER",
+            name="Highlife SoundLab Studios",
+            slug="highlife-soundlab-studios",
+            tier_or_category="STUDIO_PRODUCTION",
+            competition_id=comp_id,
+            badge_label="Official Recording Studio & Mentorship Partner",
+            tagline="World-class analog-digital recording rooms turning finalists into charting recording artists.",
+            description=(
+                "Highlife SoundLab Studios provides full EP recording, mixing, mastering, and live performance "
+                "arrangement for StageLight's Top 3 finalists, alongside pre-show soundcheck coaching and "
+                "multi-track audio capture for all live competition rounds."
+            ),
+            contribution_summary="Delivers Top 3 Finalist Studio Recording Deals & Live Sound Engineering",
+            highlights_json=[
+                "Full 5-track EP recording & mastering package for the Winner",
+                "Single production & studio video session for Top 3 Finalists",
+                "One-on-one vocal, rhythm & stagecraft mentorship clinics",
+            ],
+            website_url="https://highlifesoundlab.gh",
+            brand_initials="HSL",
+            accent_color="#d97706",
+            location="East Legon, Accra",
+            since_year=2024,
+            contact_name="Kweku 'Beats' Mensah",
+            contact_email="sessions@highlifesoundlab.gh",
+            contact_phone="+233244900330",
+            is_featured=True,
+            sort_order=30,
+            status="ACTIVE",
+            created_by=creator_id,
+        ),
+        SponsorPartner(
+            kind="PARTNER",
+            name="Accra Grand Dome & Arts Arena",
+            slug="accra-grand-dome-arena",
+            tier_or_category="VENUE_HOSPITALITY",
+            competition_id=comp_id,
+            badge_label="Official Live Showcase & Grand Finale Venue",
+            tagline="Ghana's premier 4,500-seat concert hall and rehearsal complex in central Accra.",
+            description=(
+                "Accra Grand Dome & Arts Arena hosts StageLight's live Quarterfinal showcases, choreographer "
+                "rehearsal residencies, media launch nights, and the flagship December Championship Finale."
+            ),
+            contribution_summary="Hosts Live Quarterfinal Showdowns, Rehearsals & the 4,500-Seat Finale",
+            highlights_json=[
+                "4,500-seat acoustically tuned main arena for the Grand Finale",
+                "Dedicated dance, theatre & live-band rehearsal studios",
+                "Accessible spectator seating & secure QR ticket entry",
+            ],
+            website_url="https://accragranddome.gh",
+            brand_initials="AGD",
+            accent_color="#1d4ed8",
+            location="West Ridge, Accra",
+            since_year=2025,
+            contact_name="Araba Quansah",
+            contact_email="bookings@accragranddome.gh",
+            contact_phone="+233302900440",
+            is_featured=True,
+            sort_order=40,
+            status="ACTIVE",
+            created_by=creator_id,
+        ),
+        SponsorPartner(
+            kind="PARTNER",
+            name="Adinkra Cloud & Assurance",
+            slug="adinkra-cloud-assurance",
+            tier_or_category="TELECOM_TECH",
+            competition_id=None,
+            badge_label="Official Cloud Media & Integrity Audit Partner",
+            tagline="West African edge media hosting and independent round-close verification.",
+            description=(
+                "Adinkra Cloud & Assurance supports encrypted audition media storage, automated malware scanning, "
+                "peak-night voting scalability, and independent verification of published elimination snapshots."
+            ),
+            contribution_summary="Provides Edge Video Delivery, Security Scanning & Snapshot Auditing",
+            highlights_json=[
+                "Accra-hosted low-latency video transcoding & streaming edge",
+                "Independent verification of round elimination snapshots",
+                "24/7 finale-night DDoS & payment-burst telemetry",
+            ],
+            website_url="https://adinkracloud.gh",
+            brand_initials="ACA",
+            accent_color="#4f46e5",
+            location="Dzorwulu, Accra",
+            since_year=2025,
+            contact_name="Dr. Fiifi Dadzie",
+            contact_email="trust@adinkracloud.gh",
+            contact_phone="+233302900550",
+            is_featured=True,
+            sort_order=50,
+            status="ACTIVE",
+            created_by=creator_id,
+        ),
+        SponsorPartner(
+            kind="PARTNER",
+            name="Creative Youth Ghana Foundation",
+            slug="creative-youth-ghana-foundation",
+            tier_or_category="COMMUNITY_YOUTH",
+            competition_id=None,
+            badge_label="Official 16-Region Scouting & Campus Partner",
+            tagline="Connecting grassroots arts centres and university creative societies to national stages.",
+            description=(
+                "Creative Youth Ghana Foundation coordinates regional audition clinics, campus talent drives, "
+                "guardian-consent guidance for young performers, and post-competition career alumni networks "
+                "across all 16 administrative regions."
+            ),
+            contribution_summary="Mobilizes Community Arts Hubs & Campus Audition Clinics in All 16 Regions",
+            highlights_json=[
+                "38 partner community arts centres & university hubs",
+                "Free smartphone demo-recording clinics for first-time applicants",
+                "Post-competition touring & arts grant advisory for alumni",
+            ],
+            website_url="https://creativeyouthghana.org",
+            brand_initials="CYG",
+            accent_color="#0f766e",
+            location="Kumasi, Cape Coast, Tamale & Accra",
+            since_year=2024,
+            contact_name="Akua Boatemaa Sarpong",
+            contact_email="programs@creativeyouthghana.org",
+            contact_phone="+233208900660",
+            is_featured=True,
+            sort_order=60,
+            status="ACTIVE",
+            created_by=creator_id,
+        ),
+    ]
+    db.session.add_all(demo_orgs)
+
+    if PartnershipInquiry.query.first() is None:
+        db.session.add_all(
+            [
+                PartnershipInquiry(
+                    reference_no=generate_reference("SPN"),
+                    inquiry_type="SPONSOR",
+                    organization_name="CocoaRoyale Confectionery Ghana",
+                    contact_name="Nii Armah Tagoe",
+                    contact_role="Brand Activation Manager",
+                    contact_email="brand@cocoaroyale.com.gh",
+                    contact_phone="+233244321900",
+                    website_url="https://cocoaroyale.com.gh",
+                    location="Spintex, Accra",
+                    desired_tier_or_category="GOLD",
+                    competition_id=comp_id,
+                    budget_range="GHS 50,000 - GHS 115,000",
+                    goals_message=(
+                        "We would love to sponsor the Afro-Dance & Choreography category for the Grand Finale "
+                        "and provide branded gift boxes plus a GHS 20,000 Best Choreography cash bonus."
+                    ),
+                    status="NEW",
+                    created_at=now - timedelta(days=1),
+                ),
+                PartnershipInquiry(
+                    reference_no=generate_reference("PRT"),
+                    inquiry_type="PARTNER",
+                    organization_name="BeatWave Africa Digital",
+                    contact_name="Efua Yankson",
+                    contact_role="Head of Artist Relations, West Africa",
+                    contact_email="partners@beatwaveafrica.com",
+                    contact_phone="+233558112233",
+                    website_url="https://beatwaveafrica.com",
+                    location="Osu, Accra",
+                    desired_tier_or_category="BROADCAST_MEDIA",
+                    competition_id=comp_id,
+                    budget_range="Editorial Curation & Digital Distribution",
+                    goals_message=(
+                        "Proposing an official streaming & playlist partnership featuring all StageLight Quarterfinal "
+                        "and Finale live performances on our Ghana Rising editorial hub."
+                    ),
+                    status="UNDER_REVIEW",
+                    admin_notes="Initial deck shared; call scheduled with partnerships team.",
+                    reviewed_by=creator_id,
+                    reviewed_at=now - timedelta(hours=12),
+                    created_at=now - timedelta(days=3),
+                ),
+            ]
+        )
+
+    if commit:
+        db.session.commit()
 
 
 def _seed_paid_vote_bundle(nominee: Nominee, round_obj: Round, entry: RoundEntry, vote_qty: int, created_at):

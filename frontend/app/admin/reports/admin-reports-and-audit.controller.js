@@ -6,7 +6,9 @@
     votes: ['CREDIT', 'REVERSAL', 'ADJUSTMENT'],
     applications: ['SUBMITTED', 'UNDER_REVIEW', 'CHANGES_REQUESTED', 'APPROVED', 'NOMINATED', 'REJECTED'],
     nominees: ['ACTIVE', 'QUALIFIED', 'WINNER', 'ELIMINATED', 'DISQUALIFIED'],
-    eliminations: ['QUALIFIED', 'WINNER', 'ELIMINATED', 'DISQUALIFIED']
+    eliminations: ['QUALIFIED', 'WINNER', 'ELIMINATED', 'DISQUALIFIED'],
+    sponsors_partners: ['ACTIVE', 'DRAFT', 'ARCHIVED'],
+    partnership_inquiries: ['NEW', 'UNDER_REVIEW', 'CONTACTED', 'APPROVED', 'DECLINED']
   };
 
   angular.module('talentHuntApp')
@@ -132,6 +134,8 @@
         '          <option ng-if="vm.perms.canManageCompetition()" value="applications">Applications</option>',
         '          <option ng-if="vm.perms.canManageCompetition()" value="nominees">Nominees</option>',
         '          <option ng-if="vm.perms.canManageCompetition()" value="eliminations">Elimination Snapshots</option>',
+        '          <option ng-if="vm.perms.canManageCompetition()" value="sponsors_partners">Sponsors &amp; Partners</option>',
+        '          <option ng-if="vm.perms.canManageCompetition()" value="partnership_inquiries">Partnership Inquiries</option>',
         '        </select>',
         '        <a ng-href="{{ vm.csvUrl() }}" target="_blank" class="btn btn-primary"><th-icon name="download" size="15"></th-icon><span>Export CSV</span></a>',
         '      </div>',
@@ -235,6 +239,9 @@
         '            <option value="vote_package">vote_package</option>',
         '            <option value="application">application</option>',
         '            <option value="nominee">nominee</option>',
+        '            <option value="sponsor">sponsor</option>',
+        '            <option value="partner">partner</option>',
+        '            <option value="partnership_inquiry">partnership_inquiry</option>',
         '            <option value="order">order</option>',
         '            <option value="payment">payment</option>',
         '            <option value="vote_ledger">vote_ledger</option>',
