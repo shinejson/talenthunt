@@ -2,20 +2,67 @@
   'use strict';
 
   angular.module('talentHuntApp')
-    .controller('AdminSubmissionsController', ['ApiService', 'PermissionsService', 'ToastService',
-      function (ApiService, PermissionsService, ToastService) {
+    .controller('AdminSubmissionsController', ['ApiService', 'PermissionsService', 'ToastService', 'AdminFilterUtils',
+      function (ApiService, PermissionsService, ToastService, AdminFilterUtils) {
         var vm = this;
         vm.perms = PermissionsService;
         vm.items = [];
         vm.meta = {};
-        vm.statusFilter = '';
+        vm.competitions = [];
+        vm.categories = [];
+        vm.filters = {
+          q: '',
+          competition_id: '',
+          category_id: '',
+          status: '',
+          moderation_status: '',
+          sort: 'newest',
+          date_from: null,
+          date_to: null
+        };
         vm.selected = null;
         vm.reviewForm = { score: 85, recommendation: 'NOMINATE', internal_notes: '' };
         vm.decisionForm = { decision: 'NOMINATE', reason: '', applicant_feedback: '' };
         vm.modForm = { moderation_status: 'HIDDEN', reason: '' };
 
+        ApiService.get('/admin/competitions').then(function (res) { vm.competitions = res.data || []; });
+        vm.loadCategories = function () {
+          var params = vm.filters.competition_id ? { competition_id: vm.filters.competition_id } : {};
+          ApiService.get('/admin/categories', params).then(function (res) { vm.categories = res.data || []; });
+        };
+        vm.loadCategories();
+
+        vm.onCompetitionChange = function () {
+          vm.filters.category_id = '';
+          vm.loadCategories();
+          vm.load(1);
+        };
+
+        vm.activeFilterCount = function () {
+          var c = AdminFilterUtils.countActive(vm.filters, ['sort']);
+          if (vm.filters.sort && vm.filters.sort !== 'newest') c++;
+          return c;
+        };
+
+        vm.resetFilters = function () {
+          vm.filters = {
+            q: '',
+            competition_id: '',
+            category_id: '',
+            status: '',
+            moderation_status: '',
+            sort: 'newest',
+            date_from: null,
+            date_to: null
+          };
+          vm.loadCategories();
+          vm.load(1);
+        };
+
         vm.load = function (page) {
-          ApiService.get('/admin/submissions', { status: vm.statusFilter, page: page || 1 }).then(function (res) {
+          var params = AdminFilterUtils.cleanParams(vm.filters);
+          params.page = page || 1;
+          ApiService.get('/admin/submissions', params).then(function (res) {
             vm.items = res.data || [];
             vm.meta = res.meta || {};
           });
@@ -48,6 +95,7 @@
           ApiService.post('/admin/submissions/' + vm.selected.id + '/moderate', vm.modForm).then(function (res) {
             vm.selected = res.data;
             ToastService.success('Moderation state updated.');
+            vm.load(vm.meta.page);
           }, function (err) { ToastService.error(err.message); });
         };
 
@@ -62,11 +110,82 @@
         '    <div class="card mb-3">',
         '      <div class="flex-between mb-2">',
         '        <h1 style="margin:0;font-size:1.5rem;">Submission Review &amp; Nomination Queue</h1>',
-        '        <select class="form-control" style="max-width:220px;" ng-model="vm.statusFilter" ng-change="vm.load(1)">',
-        '          <option value="">All Statuses</option><option value="SUBMITTED">SUBMITTED</option><option value="UNDER_REVIEW">UNDER_REVIEW</option><option value="CHANGES_REQUESTED">CHANGES_REQUESTED</option><option value="APPROVED">APPROVED</option><option value="NOMINATED">NOMINATED</option><option value="REJECTED">REJECTED</option>',
-        '        </select>',
+        '        <button type="button" class="btn btn-sm btn-secondary" ng-click="vm.load(vm.meta.page || 1)"><th-icon name="refresh" size="14"></th-icon><span>Refresh</span></button>',
         '      </div>',
-        '      <div class="table-responsive">',
+
+        '      <div class="filter-bar">',
+        '        <div class="filter-bar-top">',
+        '          <span class="filter-bar-title"><th-icon name="filter" size="14"></th-icon><span>Filter Submissions</span></span>',
+        '          <div class="inline-actions">',
+        '            <span class="filter-count-pill">{{ vm.meta.total !== undefined ? vm.meta.total : vm.items.length }} submission(s)</span>',
+        '            <button type="button" class="btn btn-sm btn-secondary" ng-if="vm.activeFilterCount() > 0" ng-click="vm.resetFilters()"><th-icon name="rotate-ccw" size="14"></th-icon><span>Reset</span></button>',
+        '          </div>',
+        '        </div>',
+        '        <div class="filter-bar-grid">',
+        '          <div class="filter-field-search">',
+        '            <label class="filter-label">Search</label>',
+        '            <div class="search-input-wrap">',
+        '              <th-icon name="search" size="15"></th-icon>',
+        '              <input type="text" class="form-control form-control-sm" ng-model="vm.filters.q" ng-model-options="{ debounce: 250 }" ng-change="vm.load(1)" placeholder="Ref, stage name, applicant, demo title..." />',
+        '            </div>',
+        '          </div>',
+        '          <div class="filter-field">',
+        '            <label class="filter-label">Competition</label>',
+        '            <select class="form-control form-control-sm" ng-model="vm.filters.competition_id" ng-change="vm.onCompetitionChange()">',
+        '              <option value="">All Competitions</option>',
+        '              <option ng-repeat="c in vm.competitions" value="{{ c.id }}">{{ c.title }}</option>',
+        '            </select>',
+        '          </div>',
+        '          <div class="filter-field">',
+        '            <label class="filter-label">Category</label>',
+        '            <select class="form-control form-control-sm" ng-model="vm.filters.category_id" ng-change="vm.load(1)">',
+        '              <option value="">All Categories</option>',
+        '              <option ng-repeat="cat in vm.categories" value="{{ cat.id }}">{{ cat.name }}</option>',
+        '            </select>',
+        '          </div>',
+        '          <div class="filter-field">',
+        '            <label class="filter-label">Status</label>',
+        '            <select class="form-control form-control-sm" ng-model="vm.filters.status" ng-change="vm.load(1)">',
+        '              <option value="">All Statuses</option>',
+        '              <option value="SUBMITTED">SUBMITTED</option>',
+        '              <option value="UNDER_REVIEW">UNDER_REVIEW</option>',
+        '              <option value="CHANGES_REQUESTED">CHANGES_REQUESTED</option>',
+        '              <option value="APPROVED">APPROVED</option>',
+        '              <option value="NOMINATED">NOMINATED</option>',
+        '              <option value="REJECTED">REJECTED</option>',
+        '              <option value="WITHDRAWN">WITHDRAWN</option>',
+        '            </select>',
+        '          </div>',
+        '          <div class="filter-field">',
+        '            <label class="filter-label">Visibility</label>',
+        '            <select class="form-control form-control-sm" ng-model="vm.filters.moderation_status" ng-change="vm.load(1)">',
+        '              <option value="">All Visibility</option>',
+        '              <option value="VISIBLE">VISIBLE</option>',
+        '              <option value="HIDDEN">HIDDEN</option>',
+        '              <option value="ARCHIVED">ARCHIVED</option>',
+        '            </select>',
+        '          </div>',
+        '          <div class="filter-field">',
+        '            <label class="filter-label">Sort By</label>',
+        '            <select class="form-control form-control-sm" ng-model="vm.filters.sort" ng-change="vm.load(1)">',
+        '              <option value="newest">Newest First</option>',
+        '              <option value="oldest">Oldest First</option>',
+        '              <option value="stage_name">Stage Name (A-Z)</option>',
+        '            </select>',
+        '          </div>',
+        '          <div class="filter-field-date">',
+        '            <label class="filter-label">Submitted From</label>',
+        '            <input type="date" class="form-control form-control-sm" ng-model="vm.filters.date_from" ng-change="vm.load(1)" />',
+        '          </div>',
+        '          <div class="filter-field-date">',
+        '            <label class="filter-label">Submitted To</label>',
+        '            <input type="date" class="form-control form-control-sm" ng-model="vm.filters.date_to" ng-change="vm.load(1)" />',
+        '          </div>',
+        '        </div>',
+        '      </div>',
+
+        '      <div ng-if="!vm.items.length" class="empty-state">No submissions match the selected filters.</div>',
+        '      <div class="table-responsive" ng-if="vm.items.length">',
         '        <table class="data-table">',
         '          <thead><tr><th>Ref</th><th>Applicant / Stage Name</th><th>Category</th><th>Avg Judge Score</th><th>Status</th><th></th></tr></thead>',
         '          <tbody>',

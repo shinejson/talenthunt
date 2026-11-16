@@ -12,7 +12,7 @@
   <link rel="stylesheet" href="/styles/main.css" />
 </head>
 <body>
-  <div class="app-shell">
+  <div class="app-shell" ng-class="{'has-fixed-sidebar': hasFixedSidebar, 'is-admin-shell': isAdminRoute}">
     <th-navbar></th-navbar>
     <main class="main-content" ng-view></main>
     <th-footer></th-footer>
@@ -41,6 +41,7 @@
   <script src="/app/core/permissions.service.js"></script>
 
   <!-- Shared Components -->
+  <script src="/app/components/icon/icon.component.js"></script>
   <script src="/app/components/navbar/navbar.component.js"></script>
   <script src="/app/components/footer/footer.component.js"></script>
   <script src="/app/components/status-badge/status-badge.component.js"></script>
