@@ -129,7 +129,7 @@ def create_app(config_object=None) -> Flask:
         if frontend_dir:
             candidate = os.path.normpath(os.path.join(frontend_dir, req_path))
             if candidate.startswith(os.path.abspath(frontend_dir)) and os.path.isfile(candidate):
-                rel = os.path.relpath(candidate, frontend_dir)
+                rel = os.path.relpath(candidate, frontend_dir).replace("\\", "/")
                 return send_from_directory(frontend_dir, rel)
             index_file = os.path.join(frontend_dir, "index.html")
             if os.path.isfile(index_file):
