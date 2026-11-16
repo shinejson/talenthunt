@@ -679,3 +679,248 @@ def test_admin_page_filters_across_all_endpoints(app, client):
     assert len(audits.get_json()["data"]) >= 1
 
 
+def test_sponsors_partners_pages_admin_crud_inquiries_privacy_and_exports(app, client):
+    from app.services.seed_service import seed_demo_data_if_empty
+
+    with app.app_context():
+        seed_demo_data_if_empty()
+
+    # 1. Public SPA deep-links render cleanly
+    for spa_path in ("/sponsors", "/sponsors/goldencoast-bank-ghana", "/partners", "/partners/ghanapay-fintech-network", "/admin/sponsors-partners"):
+        spa_res = client.get(spa_path)
+        assert spa_res.status_code == 200
+        assert b"talentHuntApp" in spa_res.data
+
+    # 2. Public home includes featured sponsors and strategic partners without internal contact PII
+    home = client.get("/api/v1/public/home")
+    assert home.status_code == 200
+    home_data = home.get_json()["data"]
+    assert len(home_data["featured_sponsors"]) >= 3
+    assert len(home_data["featured_partners"]) >= 3
+    for pub_item in home_data["featured_sponsors"] + home_data["featured_partners"]:
+        assert "contact_email" not in pub_item
+        assert "contact_phone" not in pub_item
+        assert "internal_notes" not in pub_item
+
+    # 3. Public /sponsors listing, tier ordering, filtering & detail endpoint
+    sp_list = client.get("/api/v1/sponsors")
+    assert sp_list.status_code == 200
+    sp_body = sp_list.get_json()["data"]
+    assert sp_body["stats"]["total_sponsors"] >= 7
+    assert len(sp_body["packages"]) >= 4
+    ranks = [s["tier_rank"] for s in sp_body["sponsors"]]
+    assert ranks == sorted(ranks)
+    assert sp_body["sponsors"][0]["tier_or_category"] == "TITLE"
+
+    gold_only = client.get("/api/v1/sponsors?tier=GOLD&q=Sankofa")
+    assert gold_only.status_code == 200
+    gold_items = gold_only.get_json()["data"]["sponsors"]
+    assert len(gold_items) == 1
+    assert gold_items[0]["slug"] == "sankofa-tropical-beverages"
+
+    sp_detail = client.get("/api/v1/sponsors/goldencoast-bank-ghana")
+    assert sp_detail.status_code == 200
+    sp_org = sp_detail.get_json()["data"]["organization"]
+    assert sp_org["kind"] == "SPONSOR"
+    assert "contact_email" not in sp_org
+    assert len(sp_detail.get_json()["data"]["related"]) >= 1
+    # Sponsor slug is not served under /partners/<slug>
+    assert client.get("/api/v1/partners/goldencoast-bank-ghana").status_code == 404
+
+    # 4. Public /partners listing, category filtering, detail & competition association
+    pt_list = client.get("/api/v1/partners")
+    assert pt_list.status_code == 200
+    pt_body = pt_list.get_json()["data"]
+    assert pt_body["stats"]["total_partners"] >= 6
+    assert len(pt_body["collaboration_tracks"]) >= 4
+
+    media_pts = client.get("/api/v1/partners?category=BROADCAST_MEDIA")
+    assert media_pts.status_code == 200
+    assert all(p["tier_or_category"] == "BROADCAST_MEDIA" for p in media_pts.get_json()["data"]["partners"])
+
+    pt_detail = client.get("/api/v1/partners/ghanapay-fintech-network")
+    assert pt_detail.status_code == 200
+    assert pt_detail.get_json()["data"]["organization"]["tier_or_category"] == "PAYMENT_FINTECH"
+
+    comp_detail = client.get("/api/v1/competitions/stagelight-ghana-2026")
+    assert comp_detail.status_code == 200
+    assert len(comp_detail.get_json()["data"]["sponsors"]) >= 1
+    assert len(comp_detail.get_json()["data"]["partners"]) >= 1
+
+    # 5. RBAC enforcement (unauthenticated, applicant, finance read-only vs competition manager)
+    assert client.post("/api/v1/admin/sponsors-partners", json={"name": "Nope", "kind": "SPONSOR", "tier_or_category": "GOLD"}).status_code == 401
+
+    fin_login = client.post("/api/v1/auth/login", json={"identifier": "finance@stagelight.gh", "password": "Finance@2026!"})
+    fin_tok = fin_login.get_json()["data"]["token"]
+    assert client.get("/api/v1/admin/sponsors-partners?kind=SPONSOR", headers=_auth_headers(fin_tok)).status_code == 200
+    assert client.post(
+        "/api/v1/admin/sponsors-partners",
+        headers=_auth_headers(fin_tok),
+        json={"name": "Fin Attempt", "kind": "SPONSOR", "tier_or_category": "GOLD"},
+    ).status_code == 403
+
+    mgr_login = client.post("/api/v1/auth/login", json={"identifier": "manager@stagelight.gh", "password": "Manager@2026!"})
+    mgr_tok = mgr_login.get_json()["data"]["token"]
+
+    # 6. Validation guards: reject unsafe URLs, mismatched tier/category, and non-image logo upload
+    bad_url = client.post(
+        "/api/v1/admin/sponsors-partners",
+        headers=_auth_headers(mgr_tok),
+        json={"name": "Unsafe Co", "kind": "SPONSOR", "tier_or_category": "GOLD", "website_url": "javascript:alert(1)"},
+    )
+    assert bad_url.status_code == 422
+
+    bad_tier = client.post(
+        "/api/v1/admin/sponsors-partners",
+        headers=_auth_headers(mgr_tok),
+        json={"name": "Wrong Tier Co", "kind": "PARTNER", "tier_or_category": "PLATINUM"},
+    )
+    assert bad_tier.status_code == 422
+
+    bad_logo = client.post(
+        "/api/v1/admin/sponsors-partners/logo",
+        headers=_auth_headers(mgr_tok),
+        data={"file": (io.BytesIO(b"\x00\x00\x00\x18ftypmp42"), "clip.mp4")},
+        content_type="multipart/form-data",
+    )
+    assert bad_logo.status_code == 422
+
+    # Valid 1x1 PNG logo upload
+    png_bytes = (
+        b"\x89PNG\r\n\x1a\n\x00\x00\x00\rIHDR\x00\x00\x00\x01\x00\x00\x00\x01"
+        b"\x08\x06\x00\x00\x00\x1f\x15\xc4\x89\x00\x00\x00\nIDATx\x9cc\x00\x01"
+        b"\x00\x00\x05\x00\x01\r\n-\xb4\x00\x00\x00\x00IEND\xaeB`\x82"
+    )
+    ok_logo = client.post(
+        "/api/v1/admin/sponsors-partners/logo",
+        headers=_auth_headers(mgr_tok),
+        data={"file": (io.BytesIO(png_bytes), "brand-logo.png")},
+        content_type="multipart/form-data",
+    )
+    assert ok_logo.status_code == 201
+    logo_asset = ok_logo.get_json()["data"]
+
+    # 7. Admin create -> verify public -> archive -> verify hidden -> delete
+    created_resp = client.post(
+        "/api/v1/admin/sponsors-partners",
+        headers=_auth_headers(mgr_tok),
+        json={
+            "kind": "SPONSOR",
+            "name": "Cape Coast Cocoa Roasters",
+            "tier_or_category": "PLATINUM",
+            "badge_label": "Official Finale Hospitality Sponsor",
+            "tagline": "Single-origin Ghanaian cocoa powering late-night rehearsals.",
+            "highlights": "Backstage Cocoa Bar\nGHS 30,000 Songwriter Bonus",
+            "website_url": "https://capecoastcocoa.gh",
+            "logo_asset_id": logo_asset["id"],
+            "accent_color": "#b45309",
+            "location": "Cape Coast, Central",
+            "since_year": 2026,
+            "is_featured": True,
+            "contact_name": "Kofi Baidoo",
+            "contact_email": "kofi@capecoastcocoa.gh",
+        },
+    )
+    assert created_resp.status_code == 201
+    created_sp = created_resp.get_json()["data"]
+    assert created_sp["logo_url"].startswith("/uploads/")
+    assert len(created_sp["highlights"]) == 2
+    assert created_sp["contact_email"] == "kofi@capecoastcocoa.gh"
+
+    assert client.get(logo_asset["url"]).status_code == 200
+    assert client.get(f"/api/v1/sponsors/{created_sp['slug']}").status_code == 200
+
+    # Sponsor bound to a DRAFT competition must remain hidden publicly until competition launches
+    draft_comp = client.post(
+        "/api/v1/admin/competitions",
+        headers=_auth_headers(mgr_tok),
+        json={"title": "Unannounced 2027 Season", "status": "DRAFT"},
+    ).get_json()["data"]
+    draft_sp = client.post(
+        "/api/v1/admin/sponsors-partners",
+        headers=_auth_headers(mgr_tok),
+        json={"kind": "SPONSOR", "name": "Secret Draft Sponsor", "tier_or_category": "GOLD", "competition_id": draft_comp["id"], "status": "ACTIVE"},
+    ).get_json()["data"]
+    assert client.get(f"/api/v1/sponsors/{draft_sp['slug']}").status_code == 404
+    assert all(s["id"] != draft_sp["id"] for s in client.get("/api/v1/sponsors").get_json()["data"]["sponsors"])
+    client.delete(f"/api/v1/admin/sponsors-partners/{draft_sp['id']}", headers=_auth_headers(mgr_tok))
+
+    arch_resp = client.patch(
+        f"/api/v1/admin/sponsors-partners/{created_sp['id']}",
+        headers=_auth_headers(mgr_tok),
+        json={"status": "ARCHIVED"},
+    )
+    assert arch_resp.status_code == 200
+    assert client.get(f"/api/v1/sponsors/{created_sp['slug']}").status_code == 404
+
+    del_resp = client.delete(f"/api/v1/admin/sponsors-partners/{created_sp['id']}", headers=_auth_headers(mgr_tok))
+    assert del_resp.status_code == 200
+
+    # 8. Public partnership inquiry submission -> admin review -> promote to live partner -> CSV export
+    bad_inq = client.post(
+        "/api/v1/public/partnership-inquiries",
+        json={"inquiry_type": "PARTNER", "organization_name": "X", "contact_name": "Y", "contact_email": "not-an-email", "goals_message": "short"},
+    )
+    assert bad_inq.status_code == 422
+
+    ok_inq = client.post(
+        "/api/v1/public/partnership-inquiries",
+        json={
+            "inquiry_type": "PARTNER",
+            "organization_name": "Takoradi Harbour FM 104.3",
+            "contact_name": "Papa Kwesi Eshun",
+            "contact_role": "Station Manager",
+            "contact_email": "studio@harbourfm.gh",
+            "contact_phone": "+233312022100",
+            "website_url": "https://harbourfm.gh",
+            "location": "Takoradi, Western",
+            "desired_tier_or_category": "BROADCAST_MEDIA",
+            "budget_range": "Broadcast, Radio or Digital Media Syndication",
+            "goals_message": "We want to broadcast weekly Western Region nominee highlights and host live radio interviews.",
+        },
+    )
+    assert ok_inq.status_code == 201
+    inq_pub = ok_inq.get_json()["data"]
+    assert inq_pub["reference_no"].startswith("PRT-")
+
+    admin_inqs = client.get("/api/v1/admin/partnership-inquiries?inquiry_type=PARTNER&q=Takoradi", headers=_auth_headers(mgr_tok))
+    assert admin_inqs.status_code == 200
+    found_inq = admin_inqs.get_json()["data"][0]
+
+    upd_inq = client.patch(
+        f"/api/v1/admin/partnership-inquiries/{found_inq['id']}",
+        headers=_auth_headers(mgr_tok),
+        json={"status": "CONTACTED", "admin_notes": "Spoke with station manager; agreement signed."},
+    )
+    assert upd_inq.status_code == 200
+    assert upd_inq.get_json()["data"]["status"] == "CONTACTED"
+
+    conv = client.post(
+        f"/api/v1/admin/partnership-inquiries/{found_inq['id']}/convert",
+        headers=_auth_headers(mgr_tok),
+        json={"status": "ACTIVE", "badge_label": "Western Region Radio Partner"},
+    )
+    assert conv.status_code == 201
+    promoted_org = conv.get_json()["data"]["organization"]
+    assert conv.get_json()["data"]["inquiry"]["status"] == "APPROVED"
+
+    # Duplicate convert blocked cleanly
+    assert client.post(f"/api/v1/admin/partnership-inquiries/{found_inq['id']}/convert", headers=_auth_headers(mgr_tok)).status_code == 409
+
+    # Promoted partner is now live on the public /partners endpoint
+    live_promoted = client.get(f"/api/v1/partners/{promoted_org['slug']}")
+    assert live_promoted.status_code == 200
+    assert live_promoted.get_json()["data"]["organization"]["name"] == "Takoradi Harbour FM 104.3"
+
+    # Reports & CSV export work for both new report types
+    sp_csv = client.get("/api/v1/admin/reports/sponsors_partners?format=csv", headers=_auth_headers(mgr_tok))
+    assert sp_csv.status_code == 200
+    assert b"GoldenCoast Bank Ghana" in sp_csv.data
+
+    inq_csv = client.get("/api/v1/admin/reports/partnership_inquiries?format=csv", headers=_auth_headers(mgr_tok))
+    assert inq_csv.status_code == 200
+    assert b"Takoradi Harbour FM 104.3" in inq_csv.data
+    assert client.get("/api/v1/admin/reports/partnership_inquiries", headers=_auth_headers(fin_tok)).status_code == 403
+
+
+

@@ -29,6 +29,9 @@
         patch: function (path, data) {
           return unwrap($http.patch(BASE + path, data || {}));
         },
+        delete: function (path) {
+          return unwrap($http.delete(BASE + path));
+        },
         upload: function (path, fileObj) {
           var fd = new FormData();
           fd.append('file', fileObj);

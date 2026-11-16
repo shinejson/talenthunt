@@ -10,8 +10,10 @@ from app.models.competition import COMPETITION_STATUSES, ROUND_STATUSES, Categor
 from app.models.elimination import EliminationRun
 from app.models.nominee import NOMINEE_STATUSES, Nominee, RoundEntry
 from app.models.operations import AuditLog, ModerationReport, PlatformSetting, SupportTicket
+from app.models.partnership import PartnershipInquiry, SponsorPartner
 from app.models.user import ROLE_DEFINITIONS, Role, User, UserRole
 from app.models.voting import Order, Payment, VoteLedger, WebhookEvent
+from app.integrations.storage.local_storage import save_uploaded_media
 from app.policies.rbac import get_current_user, roles_required
 from app.schemas import DomainError
 from app.services.audit_service import log_audit
@@ -22,6 +24,16 @@ from app.services.nomination_service import (
     ensure_nominee_in_round,
     manage_nominee_voting_link,
     record_review,
+)
+from app.services.partnership_service import (
+    IMAGE_UPLOAD_EXTENSIONS,
+    convert_inquiry_to_org,
+    create_sponsor_or_partner,
+    delete_sponsor_or_partner,
+    get_taxonomy_payload,
+    sort_public_orgs,
+    update_partnership_inquiry,
+    update_sponsor_or_partner,
 )
 from app.services.payment_service import reconcile_payment, refund_payment
 from app.services.submission_service import moderate_submission_content
@@ -104,6 +116,11 @@ def admin_dashboard():
     pending_payments = pending_pay_q.count()
     open_moderation = ModerationReport.query.filter(ModerationReport.status.in_(["OPEN", "INVESTIGATING"])).count()
     open_tickets = SupportTicket.query.filter(SupportTicket.status.in_(["OPEN", "IN_PROGRESS"])).count()
+    active_sponsors_count = SponsorPartner.query.filter_by(kind="SPONSOR", status="ACTIVE").count()
+    active_partners_count = SponsorPartner.query.filter_by(kind="PARTNER", status="ACTIVE").count()
+    open_inquiries_count = PartnershipInquiry.query.filter(
+        PartnershipInquiry.status.in_(["NEW", "UNDER_REVIEW", "CONTACTED"])
+    ).count()
     active_rounds = rounds_q.all()
     competitions = Competition.query.order_by(Competition.created_at.desc()).all()
 
@@ -142,6 +159,9 @@ def admin_dashboard():
                 "open_moderation_cases": open_moderation,
                 "open_support_tickets": open_tickets,
                 "active_rounds_count": len(active_rounds),
+                "active_sponsors": active_sponsors_count,
+                "active_partners": active_partners_count,
+                "open_partnership_inquiries": open_inquiries_count,
             },
             "incident_banner": get_incident_banner(),
             "active_rounds": [r.to_dict() for r in active_rounds],
@@ -1178,6 +1198,32 @@ def admin_generate_report(report_type: str):
                         "executed_at": rd["executed_at"],
                     }
                 )
+    elif rtype == "sponsors_partners":
+        if not actor.has_role("SUPER_ADMIN", "COMPETITION_MANAGER"):
+            raise DomainError("FORBIDDEN", "Finance role is restricted to financial and vote-reconciliation reports.", 403)
+        columns = ["kind", "name", "tier_or_category_label", "scope_label", "location", "since_year", "is_featured", "status", "website_url", "contact_name", "contact_email"]
+        q = SponsorPartner.query
+        if comp_id:
+            q = q.filter_by(competition_id=comp_id)
+        if status_filter:
+            q = q.filter_by(status=status_filter)
+        q = _apply_date_range(q, SponsorPartner.created_at)
+        for sp in q.order_by(SponsorPartner.kind.asc(), SponsorPartner.sort_order.asc(), SponsorPartner.name.asc()).all():
+            d = sp.to_admin_dict()
+            rows.append({c: d.get(c) for c in columns})
+    elif rtype == "partnership_inquiries":
+        if not actor.has_role("SUPER_ADMIN", "COMPETITION_MANAGER"):
+            raise DomainError("FORBIDDEN", "Finance role is restricted to financial and vote-reconciliation reports.", 403)
+        columns = ["reference_no", "inquiry_type", "organization_name", "desired_label", "budget_range", "contact_name", "contact_email", "contact_phone", "status", "created_at"]
+        q = PartnershipInquiry.query
+        if comp_id:
+            q = q.filter_by(competition_id=comp_id)
+        if status_filter:
+            q = q.filter_by(status=status_filter)
+        q = _apply_date_range(q, PartnershipInquiry.created_at)
+        for inq in q.order_by(PartnershipInquiry.created_at.desc()).all():
+            d = inq.to_admin_dict()
+            rows.append({c: d.get(c) for c in columns})
     else:
         raise DomainError("INVALID_REPORT", f"Unknown report type '{report_type}'.", 404)
 
@@ -1316,3 +1362,193 @@ def admin_pause_voting():
     )
     db.session.commit()
     return api_success({"scope": scope, "paused": paused, "incident_banner": get_incident_banner()})
+
+
+# --- Sponsors, Partners & Partnership Inquiries ---
+@admin_bp.get("/sponsors-partners")
+@roles_required("COMPETITION_MANAGER", "MODERATOR", "FINANCE_OFFICER")
+def admin_list_sponsors_partners():
+    q = SponsorPartner.query
+
+    kind = (request.args.get("kind") or "").strip().upper()
+    if kind:
+        q = q.filter_by(kind=kind)
+
+    tier_or_cat = (request.args.get("tier_or_category") or "").strip().upper()
+    if tier_or_cat:
+        q = q.filter_by(tier_or_category=tier_or_cat)
+
+    status = (request.args.get("status") or "").strip().upper()
+    if status:
+        q = q.filter_by(status=status)
+
+    comp_id = (request.args.get("competition_id") or "").strip()
+    if comp_id == "__platform__":
+        q = q.filter(SponsorPartner.competition_id.is_(None))
+    elif comp_id:
+        q = q.filter_by(competition_id=comp_id)
+
+    featured_flag = _parse_bool_arg("is_featured")
+    if featured_flag is not None:
+        q = q.filter_by(is_featured=featured_flag)
+
+    search_q = (request.args.get("q") or "").strip()
+    if search_q:
+        like_q = f"%{search_q}%"
+        q = q.filter(
+            or_(
+                SponsorPartner.name.ilike(like_q),
+                SponsorPartner.slug.ilike(like_q),
+                SponsorPartner.tagline.ilike(like_q),
+                SponsorPartner.badge_label.ilike(like_q),
+                SponsorPartner.contribution_summary.ilike(like_q),
+                SponsorPartner.location.ilike(like_q),
+                SponsorPartner.contact_name.ilike(like_q),
+                SponsorPartner.contact_email.ilike(like_q),
+            )
+        )
+
+    records = sort_public_orgs(q.all())
+    summary = {
+        "total_sponsors": SponsorPartner.query.filter_by(kind="SPONSOR").count(),
+        "active_sponsors": SponsorPartner.query.filter_by(kind="SPONSOR", status="ACTIVE").count(),
+        "total_partners": SponsorPartner.query.filter_by(kind="PARTNER").count(),
+        "active_partners": SponsorPartner.query.filter_by(kind="PARTNER", status="ACTIVE").count(),
+        "open_inquiries": PartnershipInquiry.query.filter(
+            PartnershipInquiry.status.in_(["NEW", "UNDER_REVIEW", "CONTACTED"])
+        ).count(),
+        "new_inquiries": PartnershipInquiry.query.filter_by(status="NEW").count(),
+    }
+    return api_success(
+        [r.to_admin_dict() for r in records],
+        meta={"summary": summary, "taxonomy": get_taxonomy_payload()},
+    )
+
+
+@admin_bp.post("/sponsors-partners")
+@roles_required("COMPETITION_MANAGER")
+def admin_create_sponsor_partner():
+    actor = get_current_user()
+    payload = request.get_json(silent=True) or {}
+    org = create_sponsor_or_partner(actor, payload)
+    return api_success(org.to_admin_dict(), status_code=201)
+
+
+@admin_bp.patch("/sponsors-partners/<org_id>")
+@roles_required("COMPETITION_MANAGER")
+def admin_update_sponsor_partner(org_id: str):
+    actor = get_current_user()
+    org = db.session.get(SponsorPartner, org_id)
+    if not org:
+        raise DomainError("NOT_FOUND", "Sponsor or partner record not found.", 404)
+    payload = request.get_json(silent=True) or {}
+    updated = update_sponsor_or_partner(actor, org, payload)
+    return api_success(updated.to_admin_dict())
+
+
+@admin_bp.delete("/sponsors-partners/<org_id>")
+@roles_required("COMPETITION_MANAGER")
+def admin_delete_sponsor_partner(org_id: str):
+    actor = get_current_user()
+    org = db.session.get(SponsorPartner, org_id)
+    if not org:
+        raise DomainError("NOT_FOUND", "Sponsor or partner record not found.", 404)
+    delete_sponsor_or_partner(actor, org)
+    return api_success({"deleted": True, "id": org_id})
+
+
+@admin_bp.post("/sponsors-partners/logo")
+@roles_required("COMPETITION_MANAGER")
+def admin_upload_sponsor_partner_logo():
+    actor = get_current_user()
+    file_obj = request.files.get("file")
+    if not file_obj or not file_obj.filename:
+        raise DomainError("NO_FILE", "Please select a logo image file (PNG, JPG, or GIF).", 400)
+    ext = file_obj.filename.rsplit(".", 1)[-1].lower() if "." in file_obj.filename else ""
+    if ext not in IMAGE_UPLOAD_EXTENSIONS:
+        raise DomainError(
+            "INVALID_FILE_TYPE",
+            f"Logo must be a PNG, JPG, JPEG, or GIF image (got '.{ext}').",
+            422,
+        )
+    asset = save_uploaded_media(file_obj, owner_user_id=actor.id)
+    db.session.commit()
+    return api_success(asset.to_dict(), status_code=201)
+
+
+@admin_bp.get("/partnership-inquiries")
+@roles_required("COMPETITION_MANAGER", "MODERATOR", "FINANCE_OFFICER")
+def admin_list_partnership_inquiries():
+    q = PartnershipInquiry.query
+
+    inquiry_type = (request.args.get("inquiry_type") or "").strip().upper()
+    if inquiry_type:
+        q = q.filter_by(inquiry_type=inquiry_type)
+
+    status = (request.args.get("status") or "").strip().upper()
+    if status:
+        q = q.filter_by(status=status)
+
+    tier_or_cat = (request.args.get("tier_or_category") or "").strip().upper()
+    if tier_or_cat:
+        q = q.filter_by(desired_tier_or_category=tier_or_cat)
+
+    comp_id = (request.args.get("competition_id") or "").strip()
+    if comp_id == "__platform__":
+        q = q.filter(PartnershipInquiry.competition_id.is_(None))
+    elif comp_id:
+        q = q.filter_by(competition_id=comp_id)
+
+    search_q = (request.args.get("q") or "").strip()
+    if search_q:
+        like_q = f"%{search_q}%"
+        q = q.filter(
+            or_(
+                PartnershipInquiry.reference_no.ilike(like_q),
+                PartnershipInquiry.organization_name.ilike(like_q),
+                PartnershipInquiry.contact_name.ilike(like_q),
+                PartnershipInquiry.contact_email.ilike(like_q),
+                PartnershipInquiry.contact_phone.ilike(like_q),
+                PartnershipInquiry.goals_message.ilike(like_q),
+                PartnershipInquiry.location.ilike(like_q),
+            )
+        )
+
+    q = _apply_date_range(q, PartnershipInquiry.created_at)
+    q = q.order_by(PartnershipInquiry.created_at.desc())
+    items, meta = paginate_query(q, lambda rec: rec.to_admin_dict(), default_per_page=20)
+    meta["open_count"] = PartnershipInquiry.query.filter(
+        PartnershipInquiry.status.in_(["NEW", "UNDER_REVIEW", "CONTACTED"])
+    ).count()
+    meta["new_count"] = PartnershipInquiry.query.filter_by(status="NEW").count()
+    return api_success(items, meta)
+
+
+@admin_bp.patch("/partnership-inquiries/<inquiry_id>")
+@roles_required("COMPETITION_MANAGER", "MODERATOR")
+def admin_update_partnership_inquiry(inquiry_id: str):
+    actor = get_current_user()
+    inquiry = db.session.get(PartnershipInquiry, inquiry_id)
+    if not inquiry:
+        raise DomainError("NOT_FOUND", "Partnership inquiry not found.", 404)
+    payload = request.get_json(silent=True) or {}
+    updated = update_partnership_inquiry(actor, inquiry, payload)
+    return api_success(updated.to_admin_dict())
+
+
+@admin_bp.post("/partnership-inquiries/<inquiry_id>/convert")
+@roles_required("COMPETITION_MANAGER")
+def admin_convert_partnership_inquiry(inquiry_id: str):
+    actor = get_current_user()
+    inquiry = db.session.get(PartnershipInquiry, inquiry_id)
+    if not inquiry:
+        raise DomainError("NOT_FOUND", "Partnership inquiry not found.", 404)
+    payload = request.get_json(silent=True) or {}
+    org = convert_inquiry_to_org(actor, inquiry, overrides=payload)
+    return api_success(
+        {
+            "organization": org.to_admin_dict(),
+            "inquiry": inquiry.to_admin_dict(),
+        },
+        status_code=201,
+    )
