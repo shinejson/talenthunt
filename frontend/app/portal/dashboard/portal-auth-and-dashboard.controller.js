@@ -1,25 +1,72 @@
 (function () {
   'use strict';
 
+  var savedPortalScrollTop = 0;
+
   angular.module('talentHuntApp')
     .component('thPortalNav', {
       template: [
-        '<aside class="side-nav" aria-label="Portal Navigation">',
-        '  <div class="side-nav-title">Contestant Portal</div>',
-        '  <a href="/portal/dashboard" ng-class="{active: $ctrl.is(\'/portal/dashboard\')}">Overview</a>',
-        '  <a href="/portal/submissions" ng-class="{active: $ctrl.is(\'/portal/submissions\')}">My Applications</a>',
-        '  <a href="/portal/submissions/new" ng-class="{active: $ctrl.is(\'/portal/submissions/new\')}">+ Submit Demo</a>',
-        '  <a ng-if="$ctrl.perms.isNominee()" href="/portal/voting" ng-class="{active: $ctrl.is(\'/portal/voting\')}">Nominee Votes &amp; QR</a>',
-        '  <a href="/portal/profile" ng-class="{active: $ctrl.is(\'/portal/profile\')}">Profile</a>',
-        '  <a href="/portal/notifications" ng-class="{active: $ctrl.is(\'/portal/notifications\')}">Notifications</a>',
-        '  <a href="/portal/security" ng-class="{active: $ctrl.is(\'/portal/security\')}">Verification &amp; Security</a>',
-        '  <a ng-if="$ctrl.perms.canAccessAdmin()" href="/admin" style="margin-top:8px;border-top:1px solid var(--border);padding-top:12px;">&rarr; Open Admin Console</a>',
+        '<div class="side-nav-mobile-bar">',
+        '  <span class="side-nav-mobile-current"><th-icon name="{{ $ctrl.currentIcon() }}" size="17"></th-icon><span>{{ $ctrl.currentLabel() }}</span></span>',
+        '  <button type="button" class="btn btn-sm btn-secondary" ng-click="$ctrl.drawerOpen = !$ctrl.drawerOpen" aria-expanded="{{ $ctrl.drawerOpen }}">',
+        '    <th-icon name="{{ $ctrl.drawerOpen ? \'x\' : \'sliders\' }}" size="15"></th-icon>',
+        '    <span>{{ $ctrl.drawerOpen ? "Close" : "Portal Menu" }}</span>',
+        '  </button>',
+        '</div>',
+        '<div class="side-nav-backdrop" ng-if="$ctrl.drawerOpen" ng-click="$ctrl.drawerOpen = false"></div>',
+        '<aside class="side-nav" ng-class="{\'drawer-open\': $ctrl.drawerOpen}" aria-label="Portal Navigation">',
+        '  <div class="side-nav-header">',
+        '    <div class="side-nav-title"><th-icon name="user" size="15"></th-icon><span>Contestant Portal</span></div>',
+        '  </div>',
+        '  <a href="/portal/dashboard" ng-click="$ctrl.drawerOpen=false" ng-class="{active: $ctrl.is(\'/portal/dashboard\')}"><th-icon name="dashboard" size="17"></th-icon><span>Overview</span></a>',
+        '  <a href="/portal/submissions" ng-click="$ctrl.drawerOpen=false" ng-class="{active: $ctrl.is(\'/portal/submissions\')}"><th-icon name="folder" size="17"></th-icon><span>My Applications</span></a>',
+        '  <a href="/portal/submissions/new" ng-click="$ctrl.drawerOpen=false" ng-class="{active: $ctrl.is(\'/portal/submissions/new\')}"><th-icon name="plus-circle" size="17"></th-icon><span>Submit Demo</span></a>',
+        '  <a ng-if="$ctrl.perms.isNominee()" href="/portal/voting" ng-click="$ctrl.drawerOpen=false" ng-class="{active: $ctrl.is(\'/portal/voting\')}"><th-icon name="qr-code" size="17"></th-icon><span>Nominee Votes &amp; QR</span></a>',
+        '  <a href="/portal/profile" ng-click="$ctrl.drawerOpen=false" ng-class="{active: $ctrl.is(\'/portal/profile\')}"><th-icon name="user" size="17"></th-icon><span>Profile</span></a>',
+        '  <a href="/portal/notifications" ng-click="$ctrl.drawerOpen=false" ng-class="{active: $ctrl.is(\'/portal/notifications\')}"><th-icon name="bell" size="17"></th-icon><span>Notifications</span></a>',
+        '  <a href="/portal/security" ng-click="$ctrl.drawerOpen=false" ng-class="{active: $ctrl.is(\'/portal/security\')}"><th-icon name="lock" size="17"></th-icon><span>Verification &amp; Security</span></a>',
+        '  <a ng-if="$ctrl.perms.canAccessAdmin()" href="/admin" ng-click="$ctrl.drawerOpen=false" style="margin-top:10px;border-top:1px solid var(--border);padding-top:12px;"><th-icon name="shield" size="17"></th-icon><span>Open Admin Console</span></a>',
         '</aside>'
       ].join(''),
-      controller: ['$location', 'PermissionsService', function ($location, PermissionsService) {
+      controller: ['$location', '$element', '$timeout', 'PermissionsService', function ($location, $element, $timeout, PermissionsService) {
         var vm = this;
         vm.perms = PermissionsService;
+        vm.drawerOpen = false;
         vm.is = function (p) { return $location.path() === p; };
+
+        var NAV_MAP = {
+          '/portal/dashboard': { label: 'Overview', icon: 'dashboard' },
+          '/portal/submissions': { label: 'My Applications', icon: 'folder' },
+          '/portal/submissions/new': { label: 'Submit Demo', icon: 'plus-circle' },
+          '/portal/voting': { label: 'Nominee Votes & QR', icon: 'qr-code' },
+          '/portal/profile': { label: 'Profile', icon: 'user' },
+          '/portal/notifications': { label: 'Notifications', icon: 'bell' },
+          '/portal/security': { label: 'Verification & Security', icon: 'lock' }
+        };
+
+        vm.currentLabel = function () {
+          var item = NAV_MAP[$location.path()];
+          return item ? item.label : 'Contestant Portal';
+        };
+        vm.currentIcon = function () {
+          var item = NAV_MAP[$location.path()];
+          return item ? item.icon : 'user';
+        };
+
+        vm.$postLink = function () {
+          var aside = $element[0] && $element[0].querySelector('aside.side-nav');
+          if (!aside) return;
+          aside.scrollTop = savedPortalScrollTop;
+          angular.element(aside).on('scroll', function () {
+            savedPortalScrollTop = aside.scrollTop;
+          });
+          $timeout(function () {
+            var activeEl = aside.querySelector('a.active');
+            if (activeEl && activeEl.scrollIntoView) {
+              activeEl.scrollIntoView({ block: 'nearest' });
+            }
+          }, 0, false);
+        };
       }]
     })
     .controller('PortalLoginController', ['$location', 'AuthService', 'PermissionsService', 'ToastService',

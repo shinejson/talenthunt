@@ -599,3 +599,83 @@ def test_seed_demo_reconciliation_pause_adjustments_and_reports(app, client):
     fin_apps = client.get("/api/v1/admin/reports/applications", headers=_auth_headers(fin_tok))
     assert fin_apps.status_code == 403
 
+
+def test_admin_page_filters_across_all_endpoints(app, client):
+    from app.services.seed_service import seed_demo_data_if_empty
+
+    with app.app_context():
+        seed_demo_data_if_empty()
+
+    sup_login = client.post("/api/v1/auth/login", json={"identifier": "admin@stagelight.gh", "password": "Admin@2026!"}).get_json()["data"]
+    mod_login = client.post("/api/v1/auth/login", json={"identifier": "moderator@stagelight.gh", "password": "Moderator@2026!"}).get_json()["data"]
+    sup_tok = sup_login["token"]
+    mod_tok = mod_login["token"]
+
+    # Competitions & Categories filters (including Moderator dropdown read access)
+    comps = client.get("/api/v1/admin/competitions?q=StageLight&voting_paused=false", headers=_auth_headers(mod_tok))
+    assert comps.status_code == 200
+    comp_list = comps.get_json()["data"]
+    assert len(comp_list) >= 1
+    comp_id = comp_list[0]["id"]
+
+    cats = client.get(f"/api/v1/admin/categories?competition_id={comp_id}&status=ACTIVE", headers=_auth_headers(mod_tok))
+    assert cats.status_code == 200
+    assert len(cats.get_json()["data"]) >= 1
+
+    # Dashboard filters
+    dash = client.get(f"/api/v1/admin/dashboard?competition_id={comp_id}&audit_entity=competition", headers=_auth_headers(sup_tok))
+    assert dash.status_code == 200
+    assert "kpis" in dash.get_json()["data"]
+
+    # Rounds & Packages filters
+    rounds = client.get(f"/api/v1/admin/rounds?competition_id={comp_id}&status=OPEN", headers=_auth_headers(sup_tok))
+    assert rounds.status_code == 200
+    assert all(r["status"] == "OPEN" for r in rounds.get_json()["data"])
+
+    pkgs = client.get(f"/api/v1/admin/packages?competition_id={comp_id}&is_featured=true", headers=_auth_headers(sup_tok))
+    assert pkgs.status_code == 200
+    assert all(p["is_featured"] is True for p in pkgs.get_json()["data"])
+
+    # Submissions filters
+    subs = client.get("/api/v1/admin/submissions?q=Ama&sort=stage_name&moderation_status=VISIBLE", headers=_auth_headers(sup_tok))
+    assert subs.status_code == 200
+    assert len(subs.get_json()["data"]) >= 1
+
+    # Nominees filters (search, featured, sort by votes)
+    noms = client.get("/api/v1/admin/nominees?is_featured=true&sort=votes_desc&q=Ama", headers=_auth_headers(sup_tok))
+    assert noms.status_code == 200
+    assert any("Ama" in n["public_name"] for n in noms.get_json()["data"])
+
+    # Votes, Orders, Payments filters
+    votes = client.get("/api/v1/admin/votes?entry_type=CREDIT&q=Ama", headers=_auth_headers(sup_tok))
+    assert votes.status_code == 200
+    assert all(v["entry_type"] == "CREDIT" for v in votes.get_json()["data"])
+
+    orders = client.get("/api/v1/admin/orders?status=PAID&payment_channel=mobile_money", headers=_auth_headers(sup_tok))
+    assert orders.status_code == 200
+    assert all(o["status"] == "PAID" for o in orders.get_json()["data"])
+
+    payments = client.get("/api/v1/admin/payments?status=SUCCESS&provider=mock", headers=_auth_headers(sup_tok))
+    assert payments.status_code == 200
+    assert all(p["status"] == "SUCCESS" for p in payments.get_json()["data"])
+
+    # Users, Moderation, Support Tickets, Reports, Audit Logs filters
+    users = client.get("/api/v1/admin/users?role=SUPER_ADMIN&status=ACTIVE&q=admin", headers=_auth_headers(sup_tok))
+    assert users.status_code == 200
+    assert len(users.get_json()["data"]) == 1
+
+    mod_cases = client.get("/api/v1/admin/moderation?status=OPEN", headers=_auth_headers(sup_tok))
+    assert mod_cases.status_code == 200
+
+    tickets = client.get("/api/v1/admin/support-tickets?category=PAYMENT&status=OPEN", headers=_auth_headers(sup_tok))
+    assert tickets.status_code == 200
+
+    rep = client.get(f"/api/v1/admin/reports/finance?competition_id={comp_id}&status=PAID", headers=_auth_headers(sup_tok))
+    assert rep.status_code == 200
+    assert all(r["status"] == "PAID" for r in rep.get_json()["data"]["rows"])
+
+    audits = client.get("/api/v1/admin/audit-logs?q=REPORT&entity_type=report", headers=_auth_headers(sup_tok))
+    assert audits.status_code == 200
+    assert len(audits.get_json()["data"]) >= 1
+
+

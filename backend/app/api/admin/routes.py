@@ -1,15 +1,16 @@
 import csv
 import io
+from datetime import timedelta
 from flask import Blueprint, Response, request
-from sqlalchemy import func
+from sqlalchemy import func, or_
 
 from app.extensions import db
-from app.models.application import Application
+from app.models.application import Application, Submission
 from app.models.competition import COMPETITION_STATUSES, ROUND_STATUSES, Category, Competition, Round, VotePackage
 from app.models.elimination import EliminationRun
 from app.models.nominee import NOMINEE_STATUSES, Nominee, RoundEntry
 from app.models.operations import AuditLog, ModerationReport, PlatformSetting, SupportTicket
-from app.models.user import ROLE_DEFINITIONS, User
+from app.models.user import ROLE_DEFINITIONS, Role, User, UserRole
 from app.models.voting import Order, Payment, VoteLedger, WebhookEvent
 from app.policies.rbac import get_current_user, roles_required
 from app.schemas import DomainError
@@ -34,32 +35,94 @@ from app.utils.time_utils import parse_iso_utc, utcnow
 admin_bp = Blueprint("admin", __name__, url_prefix="/admin")
 
 
+def _parse_bool_arg(param_name: str) -> bool | None:
+    raw = request.args.get(param_name)
+    if raw is None or raw == "":
+        return None
+    val = str(raw).strip().lower()
+    if val in ("true", "1", "yes"):
+        return True
+    if val in ("false", "0", "no"):
+        return False
+    return None
+
+
+def _apply_date_range(query, col, date_from_param: str = "date_from", date_to_param: str = "date_to"):
+    raw_from = (request.args.get(date_from_param) or "").strip()
+    raw_to = (request.args.get(date_to_param) or "").strip()
+    if raw_from:
+        try:
+            dt_from = parse_iso_utc(raw_from)
+            if dt_from is not None:
+                query = query.filter(col >= dt_from)
+        except (ValueError, TypeError):
+            pass
+    if raw_to:
+        try:
+            dt_to = parse_iso_utc(raw_to)
+            if dt_to is not None:
+                if len(raw_to) == 10:
+                    query = query.filter(col < dt_to + timedelta(days=1))
+                else:
+                    query = query.filter(col <= dt_to)
+        except (ValueError, TypeError):
+            pass
+    return query
+
+
 @admin_bp.get("/dashboard")
 @roles_required("COMPETITION_MANAGER", "REVIEWER", "MODERATOR", "FINANCE_OFFICER")
 def admin_dashboard():
-    total_apps = Application.query.count()
-    pending_reviews = Application.query.filter(Application.status.in_(["SUBMITTED", "UNDER_REVIEW"])).count()
-    total_nominees = Nominee.query.filter(Nominee.status.in_(["ACTIVE", "QUALIFIED", "WINNER"])).count()
-    total_votes = int(db.session.query(func.coalesce(func.sum(VoteLedger.quantity), 0)).scalar() or 0)
-    gross_minor = int(
-        db.session.query(func.coalesce(func.sum(Payment.amount_minor), 0))
-        .filter(Payment.status == "SUCCESS")
-        .scalar()
-        or 0
-    )
-    refunded_minor = int(
-        db.session.query(func.coalesce(func.sum(Payment.amount_minor), 0))
-        .filter(Payment.status == "REFUNDED")
-        .scalar()
-        or 0
-    )
-    quarantined_payments = Payment.query.filter_by(status="QUARANTINED").count()
-    pending_payments = Payment.query.filter(Payment.status.in_(["INITIALIZED", "PENDING"])).count()
+    comp_id = (request.args.get("competition_id") or "").strip()
+
+    app_q = Application.query
+    nom_q = Nominee.query.filter(Nominee.status.in_(["ACTIVE", "QUALIFIED", "WINNER"]))
+    votes_q = db.session.query(func.coalesce(func.sum(VoteLedger.quantity), 0))
+    pay_success_q = db.session.query(func.coalesce(func.sum(Payment.amount_minor), 0)).filter(Payment.status == "SUCCESS")
+    pay_refund_q = db.session.query(func.coalesce(func.sum(Payment.amount_minor), 0)).filter(Payment.status == "REFUNDED")
+    quarantined_q = Payment.query.filter_by(status="QUARANTINED")
+    pending_pay_q = Payment.query.filter(Payment.status.in_(["INITIALIZED", "PENDING"]))
+    rounds_q = Round.query.filter_by(status="OPEN")
+
+    if comp_id:
+        app_q = app_q.filter_by(competition_id=comp_id)
+        nom_q = nom_q.filter_by(competition_id=comp_id)
+        votes_q = votes_q.filter(VoteLedger.round.has(Round.competition_id == comp_id))
+        pay_success_q = pay_success_q.filter(Payment.order.has(Order.round.has(Round.competition_id == comp_id)))
+        pay_refund_q = pay_refund_q.filter(Payment.order.has(Order.round.has(Round.competition_id == comp_id)))
+        quarantined_q = quarantined_q.filter(Payment.order.has(Order.round.has(Round.competition_id == comp_id)))
+        pending_pay_q = pending_pay_q.filter(Payment.order.has(Order.round.has(Round.competition_id == comp_id)))
+        rounds_q = rounds_q.filter_by(competition_id=comp_id)
+
+    total_apps = app_q.count()
+    pending_reviews = app_q.filter(Application.status.in_(["SUBMITTED", "UNDER_REVIEW"])).count()
+    total_nominees = nom_q.count()
+    total_votes = int(votes_q.scalar() or 0)
+    gross_minor = int(pay_success_q.scalar() or 0)
+    refunded_minor = int(pay_refund_q.scalar() or 0)
+    quarantined_payments = quarantined_q.count()
+    pending_payments = pending_pay_q.count()
     open_moderation = ModerationReport.query.filter(ModerationReport.status.in_(["OPEN", "INVESTIGATING"])).count()
     open_tickets = SupportTicket.query.filter(SupportTicket.status.in_(["OPEN", "IN_PROGRESS"])).count()
-    active_rounds = Round.query.filter_by(status="OPEN").all()
-    competitions = Competition.query.order_by(Competition.created_at.desc()).limit(5).all()
-    recent_audits = AuditLog.query.order_by(AuditLog.created_at.desc()).limit(10).all()
+    active_rounds = rounds_q.all()
+    competitions = Competition.query.order_by(Competition.created_at.desc()).all()
+
+    audit_query = AuditLog.query
+    audit_entity = (request.args.get("audit_entity") or "").strip().lower()
+    audit_q_str = (request.args.get("audit_q") or "").strip()
+    if audit_entity:
+        audit_query = audit_query.filter_by(entity_type=audit_entity)
+    if audit_q_str:
+        like_q = f"%{audit_q_str}%"
+        audit_query = audit_query.filter(
+            or_(
+                AuditLog.action.ilike(like_q),
+                AuditLog.entity_type.ilike(like_q),
+                AuditLog.entity_id.ilike(like_q),
+                AuditLog.actor.has(User.full_name.ilike(like_q)),
+            )
+        )
+    recent_audits = audit_query.order_by(AuditLog.created_at.desc()).limit(15).all()
 
     return api_success(
         {
@@ -90,9 +153,29 @@ def admin_dashboard():
 
 # --- Competitions ---
 @admin_bp.get("/competitions")
-@roles_required("COMPETITION_MANAGER", "REVIEWER", "FINANCE_OFFICER")
+@roles_required("COMPETITION_MANAGER", "REVIEWER", "MODERATOR", "FINANCE_OFFICER")
 def admin_list_competitions():
-    comps = Competition.query.order_by(Competition.created_at.desc()).all()
+    q = Competition.query
+    if request.args.get("status"):
+        q = q.filter_by(status=request.args["status"].strip().upper())
+    vp = _parse_bool_arg("voting_paused")
+    if vp is not None:
+        q = q.filter_by(voting_paused=vp)
+    pl = _parse_bool_arg("public_leaderboard")
+    if pl is not None:
+        q = q.filter_by(public_leaderboard=pl)
+    search_q = (request.args.get("q") or "").strip()
+    if search_q:
+        like_q = f"%{search_q}%"
+        q = q.filter(
+            or_(
+                Competition.title.ilike(like_q),
+                Competition.slug.ilike(like_q),
+                Competition.tagline.ilike(like_q),
+                Competition.prize_summary.ilike(like_q),
+            )
+        )
+    comps = q.order_by(Competition.created_at.desc()).all()
     return api_success([c.to_dict(include_details=True) for c in comps])
 
 
@@ -197,12 +280,24 @@ def admin_update_competition(comp_id: str):
 
 # --- Categories ---
 @admin_bp.get("/categories")
-@roles_required("COMPETITION_MANAGER", "REVIEWER")
+@roles_required("COMPETITION_MANAGER", "REVIEWER", "MODERATOR", "FINANCE_OFFICER")
 def admin_list_categories():
     comp_id = request.args.get("competition_id")
     q = Category.query
     if comp_id:
         q = q.filter_by(competition_id=comp_id)
+    if request.args.get("status"):
+        q = q.filter_by(status=request.args["status"].strip().upper())
+    search_q = (request.args.get("q") or "").strip()
+    if search_q:
+        like_q = f"%{search_q}%"
+        q = q.filter(
+            or_(
+                Category.name.ilike(like_q),
+                Category.slug.ilike(like_q),
+                Category.description.ilike(like_q),
+            )
+        )
     return api_success([c.to_dict() for c in q.order_by(Category.name.asc()).all()])
 
 
@@ -260,7 +355,20 @@ def admin_list_rounds():
     q = Round.query
     if comp_id:
         q = q.filter_by(competition_id=comp_id)
-    return api_success([r.to_dict() for r in q.order_by(Round.competition_id, Round.sequence_no.asc()).all()])
+    if request.args.get("status"):
+        q = q.filter_by(status=request.args["status"].strip().upper())
+    finale = _parse_bool_arg("is_finale")
+    if finale is not None:
+        q = q.filter_by(is_finale=finale)
+    search_q = (request.args.get("q") or "").strip()
+    if search_q:
+        like_q = f"%{search_q}%"
+        q = q.filter(or_(Round.name.ilike(like_q), Round.description.ilike(like_q)))
+    items = [r.to_dict() for r in q.order_by(Round.competition_id, Round.sequence_no.asc()).all()]
+    method = (request.args.get("method") or "").strip().lower()
+    if method:
+        items = [r for r in items if (r.get("elimination_config") or {}).get("method", "").lower() == method]
+    return api_success(items)
 
 
 @admin_bp.post("/rounds")
@@ -360,6 +468,15 @@ def admin_list_packages():
     q = VotePackage.query
     if comp_id:
         q = q.filter_by(competition_id=comp_id)
+    if request.args.get("status"):
+        q = q.filter_by(status=request.args["status"].strip().upper())
+    featured = _parse_bool_arg("is_featured")
+    if featured is not None:
+        q = q.filter_by(is_featured=featured)
+    search_q = (request.args.get("q") or "").strip()
+    if search_q:
+        like_q = f"%{search_q}%"
+        q = q.filter(or_(VotePackage.name.ilike(like_q), VotePackage.description.ilike(like_q)))
     return api_success([p.to_dict() for p in q.order_by(VotePackage.sort_order.asc(), VotePackage.vote_quantity.asc()).all()])
 
 
@@ -429,9 +546,37 @@ def admin_list_submissions():
     if request.args.get("category_id"):
         q = q.filter_by(category_id=request.args["category_id"])
     if request.args.get("status"):
-        q = q.filter_by(status=request.args["status"].upper())
+        q = q.filter_by(status=request.args["status"].strip().upper())
+    if request.args.get("moderation_status"):
+        mod_st = request.args["moderation_status"].strip().upper()
+        q = q.filter(Application.submissions.any(Submission.moderation_status == mod_st))
+    minor = _parse_bool_arg("is_minor")
+    if minor is not None:
+        q = q.filter_by(is_minor=minor)
+    search_q = (request.args.get("q") or "").strip()
+    if search_q:
+        like_q = f"%{search_q}%"
+        q = q.filter(
+            or_(
+                Application.reference_no.ilike(like_q),
+                Application.stage_name.ilike(like_q),
+                Application.location.ilike(like_q),
+                Application.contact_email.ilike(like_q),
+                Application.contact_phone.ilike(like_q),
+                Application.applicant.has(User.full_name.ilike(like_q)),
+                Application.submissions.any(Submission.title.ilike(like_q)),
+            )
+        )
+    q = _apply_date_range(q, Application.submitted_at)
 
-    q = q.order_by(Application.submitted_at.desc())
+    sort_key = (request.args.get("sort") or "newest").strip().lower()
+    if sort_key == "oldest":
+        q = q.order_by(Application.submitted_at.asc())
+    elif sort_key == "stage_name":
+        q = q.order_by(Application.stage_name.asc(), Application.submitted_at.desc())
+    else:
+        q = q.order_by(Application.submitted_at.desc())
+
     items, meta = paginate_query(q, lambda a: a.to_dict(include_internal=True), default_per_page=20)
     return api_success(items, meta)
 
@@ -485,10 +630,46 @@ def admin_list_nominees():
     q = Nominee.query
     if request.args.get("competition_id"):
         q = q.filter_by(competition_id=request.args["competition_id"])
+    if request.args.get("category_id"):
+        q = q.filter_by(category_id=request.args["category_id"])
     if request.args.get("status"):
-        q = q.filter_by(status=request.args["status"].upper())
+        q = q.filter_by(status=request.args["status"].strip().upper())
+    featured = _parse_bool_arg("is_featured")
+    if featured is not None:
+        q = q.filter_by(is_featured=featured)
+    paused = _parse_bool_arg("voting_paused")
+    if paused is not None:
+        q = q.filter_by(voting_paused=paused)
+    search_q = (request.args.get("q") or "").strip()
+    if search_q:
+        like_q = f"%{search_q}%"
+        q = q.filter(
+            or_(
+                Nominee.public_name.ilike(like_q),
+                Nominee.public_slug.ilike(like_q),
+                Nominee.location.ilike(like_q),
+                Nominee.tagline.ilike(like_q),
+                Nominee.round_entries.any(RoundEntry.voting_slug.ilike(like_q)),
+            )
+        )
 
-    q = q.order_by(Nominee.nominated_at.desc())
+    sort_key = (request.args.get("sort") or "newest").strip().lower()
+    if sort_key == "name_asc":
+        q = q.order_by(Nominee.public_name.asc())
+    elif sort_key == "votes_desc":
+        vote_sub = (
+            db.session.query(
+                VoteLedger.nominee_id.label("nom_id"),
+                func.coalesce(func.sum(VoteLedger.quantity), 0).label("vtotal"),
+            )
+            .group_by(VoteLedger.nominee_id)
+            .subquery()
+        )
+        q = q.outerjoin(vote_sub, Nominee.id == vote_sub.c.nom_id).order_by(
+            func.coalesce(vote_sub.c.vtotal, 0).desc(), Nominee.nominated_at.desc()
+        )
+    else:
+        q = q.order_by(Nominee.nominated_at.desc())
 
     def _serialize(n: Nominee):
         ae = n.get_active_round_entry()
@@ -579,7 +760,19 @@ def admin_list_vote_ledger():
     if request.args.get("nominee_id"):
         q = q.filter_by(nominee_id=request.args["nominee_id"])
     if request.args.get("entry_type"):
-        q = q.filter_by(entry_type=request.args["entry_type"].upper())
+        q = q.filter_by(entry_type=request.args["entry_type"].strip().upper())
+    search_q = (request.args.get("q") or "").strip()
+    if search_q:
+        like_q = f"%{search_q}%"
+        q = q.filter(
+            or_(
+                VoteLedger.reason.ilike(like_q),
+                VoteLedger.approval_reference.ilike(like_q),
+                VoteLedger.nominee.has(Nominee.public_name.ilike(like_q)),
+                VoteLedger.order.has(Order.public_reference.ilike(like_q)),
+            )
+        )
+    q = _apply_date_range(q, VoteLedger.created_at)
     q = q.order_by(VoteLedger.created_at.desc())
     items, meta = paginate_query(q, lambda le: le.to_dict(), default_per_page=30)
     return api_success(items, meta)
@@ -607,11 +800,27 @@ def admin_create_vote_adjustment():
 def admin_list_orders():
     q = Order.query
     if request.args.get("status"):
-        q = q.filter_by(status=request.args["status"].upper())
+        q = q.filter_by(status=request.args["status"].strip().upper())
     if request.args.get("round_id"):
         q = q.filter_by(round_id=request.args["round_id"])
     if request.args.get("nominee_id"):
         q = q.filter_by(nominee_id=request.args["nominee_id"])
+    if request.args.get("payment_channel"):
+        q = q.filter_by(payment_channel=request.args["payment_channel"].strip().lower())
+    search_q = (request.args.get("q") or "").strip()
+    if search_q:
+        like_q = f"%{search_q}%"
+        q = q.filter(
+            or_(
+                Order.public_reference.ilike(like_q),
+                Order.receipt_code.ilike(like_q),
+                Order.voter_phone.ilike(like_q),
+                Order.voter_email.ilike(like_q),
+                Order.voter_name.ilike(like_q),
+                Order.nominee.has(Nominee.public_name.ilike(like_q)),
+            )
+        )
+    q = _apply_date_range(q, Order.created_at)
     q = q.order_by(Order.created_at.desc())
     items, meta = paginate_query(q, lambda o: o.to_dict(include_finance=True), default_per_page=25)
     return api_success(items, meta)
@@ -622,10 +831,30 @@ def admin_list_orders():
 def admin_list_payments():
     q = Payment.query
     if request.args.get("status"):
-        q = q.filter_by(status=request.args["status"].upper())
+        q = q.filter_by(status=request.args["status"].strip().upper())
+    if request.args.get("provider"):
+        q = q.filter_by(provider=request.args["provider"].strip().lower())
+    if request.args.get("channel"):
+        q = q.filter_by(channel=request.args["channel"].strip().lower())
+    search_q = (request.args.get("q") or "").strip()
+    if search_q:
+        like_q = f"%{search_q}%"
+        q = q.filter(
+            or_(
+                Payment.provider_reference.ilike(like_q),
+                Payment.provider_transaction_id.ilike(like_q),
+                Payment.order.has(Order.public_reference.ilike(like_q)),
+                Payment.order.has(Order.nominee.has(Nominee.public_name.ilike(like_q))),
+            )
+        )
+    q = _apply_date_range(q, Payment.created_at)
     q = q.order_by(Payment.created_at.desc())
     items, meta = paginate_query(q, lambda p: p.to_dict(), default_per_page=25)
-    webhooks = [w.to_dict() for w in WebhookEvent.query.order_by(WebhookEvent.received_at.desc()).limit(15).all()]
+
+    wh_q = WebhookEvent.query
+    if request.args.get("webhook_status"):
+        wh_q = wh_q.filter_by(status=request.args["webhook_status"].strip().upper())
+    webhooks = [w.to_dict() for w in wh_q.order_by(WebhookEvent.received_at.desc()).limit(30).all()]
     meta["recent_webhooks"] = webhooks
     return api_success(items, meta)
 
@@ -701,7 +930,27 @@ def admin_finalise_elimination(round_id: str):
 @admin_bp.get("/users")
 @roles_required("SUPER_ADMIN")
 def admin_list_users():
-    q = User.query.order_by(User.created_at.desc())
+    q = User.query
+    if request.args.get("status"):
+        q = q.filter_by(status=request.args["status"].strip().upper())
+    if request.args.get("role"):
+        role_name = request.args["role"].strip().upper()
+        q = q.filter(User.user_roles.any(UserRole.role.has(Role.name == role_name)))
+    verified = _parse_bool_arg("is_verified")
+    if verified is not None:
+        q = q.filter_by(is_verified=verified)
+    search_q = (request.args.get("q") or "").strip()
+    if search_q:
+        like_q = f"%{search_q}%"
+        q = q.filter(
+            or_(
+                User.full_name.ilike(like_q),
+                User.email.ilike(like_q),
+                User.phone.ilike(like_q),
+                User.location.ilike(like_q),
+            )
+        )
+    q = q.order_by(User.created_at.desc())
     items, meta = paginate_query(q, lambda u: u.to_dict(include_private=True), default_per_page=25)
     meta["available_roles"] = list(ROLE_DEFINITIONS.keys())
     return api_success(items, meta)
@@ -751,7 +1000,19 @@ def admin_update_user_status(user_id: str):
 def admin_list_moderation():
     q = ModerationReport.query
     if request.args.get("status"):
-        q = q.filter_by(status=request.args["status"].upper())
+        q = q.filter_by(status=request.args["status"].strip().upper())
+    if request.args.get("entity_type"):
+        q = q.filter_by(entity_type=request.args["entity_type"].strip().upper())
+    search_q = (request.args.get("q") or "").strip()
+    if search_q:
+        like_q = f"%{search_q}%"
+        q = q.filter(
+            or_(
+                ModerationReport.reason.ilike(like_q),
+                ModerationReport.details.ilike(like_q),
+                ModerationReport.entity_id.ilike(like_q),
+            )
+        )
     q = q.order_by(ModerationReport.created_at.desc())
     items, meta = paginate_query(q, lambda m: m.to_dict())
     return api_success(items, meta)
@@ -781,7 +1042,25 @@ def admin_resolve_moderation(report_id: str):
 @admin_bp.get("/support-tickets")
 @roles_required("COMPETITION_MANAGER", "MODERATOR", "FINANCE_OFFICER")
 def admin_list_support_tickets():
-    q = SupportTicket.query.order_by(SupportTicket.created_at.desc())
+    q = SupportTicket.query
+    if request.args.get("status"):
+        q = q.filter_by(status=request.args["status"].strip().upper())
+    if request.args.get("category"):
+        q = q.filter_by(category=request.args["category"].strip().upper())
+    search_q = (request.args.get("q") or "").strip()
+    if search_q:
+        like_q = f"%{search_q}%"
+        q = q.filter(
+            or_(
+                SupportTicket.ticket_reference.ilike(like_q),
+                SupportTicket.subject.ilike(like_q),
+                SupportTicket.contact_name.ilike(like_q),
+                SupportTicket.contact_email.ilike(like_q),
+                SupportTicket.contact_phone.ilike(like_q),
+                SupportTicket.order_reference.ilike(like_q),
+            )
+        )
+    q = q.order_by(SupportTicket.created_at.desc())
     items, meta = paginate_query(q, lambda t: t.to_dict())
     return api_success(items, meta)
 
@@ -816,35 +1095,76 @@ def admin_generate_report(report_type: str):
     if rtype in ("applications", "nominees", "eliminations") and not actor.has_role("SUPER_ADMIN", "COMPETITION_MANAGER"):
         raise DomainError("FORBIDDEN", "Finance role is restricted to financial and vote-reconciliation reports.", 403)
 
+    comp_id = (request.args.get("competition_id") or "").strip()
+    round_id = (request.args.get("round_id") or "").strip()
+    status_filter = (request.args.get("status") or "").strip().upper()
+    search_q = (request.args.get("q") or "").strip().lower()
+
     rows = []
     columns = []
 
     if rtype == "applications":
         columns = ["reference_no", "applicant_name", "stage_name", "competition_title", "category_name", "status", "submitted_at"]
-        for a in Application.query.order_by(Application.submitted_at.desc()).all():
+        q = Application.query
+        if comp_id:
+            q = q.filter_by(competition_id=comp_id)
+        if status_filter:
+            q = q.filter_by(status=status_filter)
+        q = _apply_date_range(q, Application.submitted_at)
+        for a in q.order_by(Application.submitted_at.desc()).all():
             d = a.to_dict(include_internal=True)
             rows.append({c: d.get(c) for c in columns})
     elif rtype == "nominees":
         columns = ["public_name", "public_slug", "competition_title", "category_name", "status", "total_votes", "nominated_at"]
-        for n in Nominee.query.order_by(Nominee.nominated_at.desc()).all():
+        q = Nominee.query
+        if comp_id:
+            q = q.filter_by(competition_id=comp_id)
+        if status_filter:
+            q = q.filter_by(status=status_filter)
+        q = _apply_date_range(q, Nominee.nominated_at)
+        for n in q.order_by(Nominee.nominated_at.desc()).all():
             d = n.to_public_dict()
             d["total_votes"] = get_nominee_total_votes(n.id)
             rows.append({c: d.get(c) for c in columns})
     elif rtype == "votes":
         columns = ["created_at", "entry_type", "nominee_name", "round_name", "quantity", "order_reference", "reason"]
-        for le in VoteLedger.query.order_by(VoteLedger.created_at.desc()).limit(1000).all():
+        q = VoteLedger.query
+        if comp_id:
+            q = q.filter(VoteLedger.round.has(Round.competition_id == comp_id))
+        if round_id:
+            q = q.filter_by(round_id=round_id)
+        if status_filter:
+            q = q.filter_by(entry_type=status_filter)
+        q = _apply_date_range(q, VoteLedger.created_at)
+        for le in q.order_by(VoteLedger.created_at.desc()).limit(1000).all():
             d = le.to_dict()
             rows.append({c: d.get(c) for c in columns})
     elif rtype in ("finance", "orders"):
         columns = ["public_reference", "receipt_code", "nominee_name", "round_name", "vote_quantity", "amount_major", "currency", "payment_channel", "status", "created_at", "paid_at"]
-        for o in Order.query.order_by(Order.created_at.desc()).limit(1000).all():
+        q = Order.query
+        if comp_id:
+            q = q.filter(Order.round.has(Round.competition_id == comp_id))
+        if round_id:
+            q = q.filter_by(round_id=round_id)
+        if status_filter:
+            q = q.filter_by(status=status_filter)
+        q = _apply_date_range(q, Order.created_at)
+        for o in q.order_by(Order.created_at.desc()).limit(1000).all():
             d = o.to_dict(include_finance=True)
             rows.append({c: d.get(c) for c in columns})
     elif rtype == "eliminations":
         columns = ["round_name", "method", "nominee_name", "category_name", "final_votes", "judge_score", "final_rank", "outcome", "executed_at"]
-        for run in EliminationRun.query.order_by(EliminationRun.executed_at.desc()).all():
+        q = EliminationRun.query
+        if comp_id:
+            q = q.filter(EliminationRun.round.has(Round.competition_id == comp_id))
+        if round_id:
+            q = q.filter_by(round_id=round_id)
+        q = _apply_date_range(q, EliminationRun.executed_at)
+        for run in q.order_by(EliminationRun.executed_at.desc()).all():
             rd = run.to_dict(include_results=True)
             for res in rd.get("results", []):
+                if status_filter and (res.get("outcome") or "").upper() != status_filter:
+                    continue
                 rows.append(
                     {
                         "round_name": rd["round_name"],
@@ -860,6 +1180,12 @@ def admin_generate_report(report_type: str):
                 )
     else:
         raise DomainError("INVALID_REPORT", f"Unknown report type '{report_type}'.", 404)
+
+    if search_q:
+        rows = [
+            r for r in rows
+            if any(search_q in str(r.get(col) or "").lower() for col in columns)
+        ]
 
     log_audit(
         actor_user_id=actor.id,
@@ -903,9 +1229,21 @@ def admin_generate_report(report_type: str):
 def admin_list_audit_logs():
     q = AuditLog.query
     if request.args.get("action"):
-        q = q.filter_by(action=request.args["action"].upper())
+        q = q.filter(AuditLog.action.ilike(f"%{request.args['action'].strip()}%"))
     if request.args.get("entity_type"):
-        q = q.filter_by(entity_type=request.args["entity_type"].lower())
+        q = q.filter_by(entity_type=request.args["entity_type"].strip().lower())
+    search_q = (request.args.get("q") or "").strip()
+    if search_q:
+        like_q = f"%{search_q}%"
+        q = q.filter(
+            or_(
+                AuditLog.action.ilike(like_q),
+                AuditLog.entity_type.ilike(like_q),
+                AuditLog.entity_id.ilike(like_q),
+                AuditLog.actor.has(User.full_name.ilike(like_q)),
+            )
+        )
+    q = _apply_date_range(q, AuditLog.created_at)
     q = q.order_by(AuditLog.created_at.desc())
     items, meta = paginate_query(q, lambda a: a.to_dict(), default_per_page=30)
     return api_success(items, meta)
