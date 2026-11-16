@@ -86,8 +86,8 @@
         vm.load();
       }
     ])
-    .controller('AdminAuditLogsController', ['ApiService', 'AdminFilterUtils',
-      function (ApiService, AdminFilterUtils) {
+    .controller('AdminAuditLogsController', ['AdminFilterUtils', 'DataTableSource',
+      function (AdminFilterUtils, DataTableSource) {
         var vm = this;
         vm.logs = [];
         vm.meta = {};
@@ -108,16 +108,16 @@
           vm.load(1);
         };
 
-        vm.load = function (page) {
-          var params = AdminFilterUtils.cleanParams(vm.filters);
-          params.page = page || 1;
-          ApiService.get('/admin/audit-logs', params).then(function (res) {
+        // DataTables (th-datatable) requests each page, page size and column sort from the API.
+        vm.table = DataTableSource.server('/admin/audit-logs',
+          function () { return AdminFilterUtils.cleanParams(vm.filters); },
+          function (res) {
             vm.logs = res.data || [];
             vm.meta = res.meta || {};
           });
-        };
 
-        vm.load(1);
+        // load(1) restarts from the first page (filters changed); any other page refreshes in place.
+        vm.load = function (page) { vm.table.load(page); };
       }
     ])
     .run(['$templateCache', function ($templateCache) {
@@ -193,12 +193,8 @@
         '      Rows: <strong>{{ vm.reportData.summary.row_count }}</strong>',
         '      <span ng-if="vm.reportData.summary.net_collections_ghs !== undefined"> &bull; Gross: <strong>GHS {{ vm.reportData.summary.gross_collections_ghs | number:2 }}</strong> &bull; Refunds: <strong>GHS {{ vm.reportData.summary.refunds_ghs | number:2 }}</strong> &bull; Net: <strong>GHS {{ vm.reportData.summary.net_collections_ghs | number:2 }}</strong></span>',
         '    </div>',
-        '    <div ng-if="vm.reportData && !vm.reportData.rows.length" class="empty-state">No report records match the selected filters.</div>',
-        '    <div class="table-responsive" ng-if="vm.reportData && vm.reportData.rows.length">',
-        '      <table class="data-table">',
-        '        <thead><tr><th ng-repeat="col in vm.reportData.columns">{{ col }}</th></tr></thead>',
-        '        <tbody><tr ng-repeat="r in vm.reportData.rows | limitTo:50"><td ng-repeat="col in vm.reportData.columns">{{ r[col] }}</td></tr></tbody>',
-        '      </table>',
+        '    <div class="table-responsive" ng-if="vm.reportData">',
+        '      <table class="data-table" th-datatable dt-data="vm.reportData.rows" dt-columns="vm.reportData.columns" dt-empty="No report records match the selected filters."></table>',
         '    </div>',
         '  </div>',
         '</div>'
@@ -267,12 +263,11 @@
         '      </div>',
         '    </div>',
 
-        '    <div ng-if="!vm.logs.length" class="empty-state">No audit log entries match the selected filters.</div>',
-        '    <div class="table-responsive" ng-if="vm.logs.length">',
-        '      <table class="data-table">',
-        '        <thead><tr><th>Timestamp</th><th>Actor</th><th>Action</th><th>Entity</th><th>Details</th></tr></thead>',
+        '    <div class="table-responsive">',
+        '      <table class="data-table" th-datatable="vm.table" dt-row="a" dt-empty="No audit log entries match the selected filters.">',
+        '        <thead><tr><th dt-sort="created_at">Timestamp</th><th>Actor</th><th dt-sort="action">Action</th><th dt-sort="entity_type">Entity</th><th>Details</th></tr></thead>',
         '        <tbody>',
-        '          <tr ng-repeat="a in vm.logs">',
+        '          <tr>',
         '            <td>{{ a.created_at | date:"short" }}</td>',
         '            <td>{{ a.actor_name }}</td>',
         '            <td><code>{{ a.action }}</code></td>',
@@ -282,7 +277,6 @@
         '        </tbody>',
         '      </table>',
         '    </div>',
-        '    <th-pagination meta="vm.meta" on-page="vm.load(page)"></th-pagination>',
         '  </div>',
         '</div>'
       ].join(''));
