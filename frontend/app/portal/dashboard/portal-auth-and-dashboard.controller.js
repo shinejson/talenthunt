@@ -17,57 +17,106 @@
         '<aside class="side-nav" ng-class="{\'drawer-open\': $ctrl.drawerOpen}" aria-label="Portal Navigation">',
         '  <div class="side-nav-header">',
         '    <div class="side-nav-title"><th-icon name="user" size="15"></th-icon><span>Contestant Portal</span></div>',
+        '    <span class="side-nav-status-badge"><span class="status-dot"></span> Active</span>',
         '  </div>',
-        '  <a href="/portal/dashboard" ng-click="$ctrl.drawerOpen=false" ng-class="{active: $ctrl.is(\'/portal/dashboard\')}"><th-icon name="dashboard" size="17"></th-icon><span>Overview</span></a>',
-        '  <a href="/portal/submissions" ng-click="$ctrl.drawerOpen=false" ng-class="{active: $ctrl.is(\'/portal/submissions\')}"><th-icon name="folder" size="17"></th-icon><span>My Applications</span></a>',
-        '  <a href="/portal/submissions/new" ng-click="$ctrl.drawerOpen=false" ng-class="{active: $ctrl.is(\'/portal/submissions/new\')}"><th-icon name="plus-circle" size="17"></th-icon><span>Submit Demo</span></a>',
-        '  <a ng-if="$ctrl.perms.isNominee()" href="/portal/voting" ng-click="$ctrl.drawerOpen=false" ng-class="{active: $ctrl.is(\'/portal/voting\')}"><th-icon name="qr-code" size="17"></th-icon><span>Nominee Votes &amp; QR</span></a>',
-        '  <a href="/portal/profile" ng-click="$ctrl.drawerOpen=false" ng-class="{active: $ctrl.is(\'/portal/profile\')}"><th-icon name="user" size="17"></th-icon><span>Profile</span></a>',
-        '  <a href="/portal/notifications" ng-click="$ctrl.drawerOpen=false" ng-class="{active: $ctrl.is(\'/portal/notifications\')}"><th-icon name="bell" size="17"></th-icon><span>Notifications</span></a>',
-        '  <a href="/portal/security" ng-click="$ctrl.drawerOpen=false" ng-class="{active: $ctrl.is(\'/portal/security\')}"><th-icon name="lock" size="17"></th-icon><span>Verification &amp; Security</span></a>',
-        '  <a ng-if="$ctrl.perms.canAccessAdmin()" href="/admin" ng-click="$ctrl.drawerOpen=false" style="margin-top:10px;border-top:1px solid var(--border);padding-top:12px;"><th-icon name="shield" size="17"></th-icon><span>Open Admin Console</span></a>',
+        '  <div class="side-nav-body">',
+        '    <a href="/portal/dashboard" ng-click="$ctrl.drawerOpen=false" ng-class="{active: $ctrl.is(\'/portal/dashboard\')}"><th-icon name="dashboard" size="17"></th-icon><span>Overview</span></a>',
+        '    <a href="/portal/submissions" ng-click="$ctrl.drawerOpen=false" ng-class="{active: $ctrl.is(\'/portal/submissions\')}"><th-icon name="folder" size="17"></th-icon><span>My Applications</span></a>',
+        '    <a href="/portal/submissions/new" ng-click="$ctrl.drawerOpen=false" ng-class="{active: $ctrl.is(\'/portal/submissions/new\')}"><th-icon name="plus-circle" size="17"></th-icon><span>Submit Demo</span></a>',
+        '    <a ng-if="$ctrl.perms.isNominee()" href="/portal/voting" ng-click="$ctrl.drawerOpen=false" ng-class="{active: $ctrl.is(\'/portal/voting\')}"><th-icon name="qr-code" size="17"></th-icon><span>Nominee Votes &amp; QR</span></a>',
+        '    <a href="/portal/profile" ng-click="$ctrl.drawerOpen=false" ng-class="{active: $ctrl.is(\'/portal/profile\')}"><th-icon name="user" size="17"></th-icon><span>Profile</span></a>',
+        '    <a href="/portal/notifications" ng-click="$ctrl.drawerOpen=false" ng-class="{active: $ctrl.is(\'/portal/notifications\')}"><th-icon name="bell" size="17"></th-icon><span>Notifications</span></a>',
+        '    <a href="/portal/security" ng-click="$ctrl.drawerOpen=false" ng-class="{active: $ctrl.is(\'/portal/security\')}"><th-icon name="lock" size="17"></th-icon><span>Verification &amp; Security</span></a>',
+        '    <a ng-if="$ctrl.perms.canAccessAdmin()" href="/admin" ng-click="$ctrl.drawerOpen=false" style="margin-top:10px;border-top:1px solid var(--border);padding-top:12px;"><th-icon name="shield" size="17"></th-icon><span>Open Admin Console</span></a>',
+        '  </div>',
+        '  <div class="side-nav-footer">',
+        '    <div class="side-nav-user-card" ng-if="$ctrl.user">',
+        '      <div class="side-nav-user-avatar">{{ $ctrl.user.full_name | initials }}</div>',
+        '      <div class="side-nav-user-info">',
+        '        <div class="side-nav-user-name" title="{{ $ctrl.user.full_name }}">{{ $ctrl.user.full_name }}</div>',
+        '        <div class="side-nav-user-role">{{ $ctrl.primaryRole() }}</div>',
+        '      </div>',
+        '    </div>',
+        '    <div class="side-nav-footer-actions">',
+        '      <a href="/" class="side-nav-footer-btn" title="View Public Website">',
+        '        <th-icon name="home" size="14"></th-icon><span>Public Site</span>',
+        '      </a>',
+        '      <a ng-if="$ctrl.perms.canAccessAdmin()" href="/admin" class="side-nav-footer-btn" title="Open Admin Console">',
+        '        <th-icon name="shield" size="14"></th-icon><span>Admin</span>',
+        '      </a>',
+        '      <button type="button" class="side-nav-footer-btn btn-signout" ng-click="$ctrl.logout()" title="Sign Out">',
+        '        <th-icon name="log-out" size="14"></th-icon><span>Sign Out</span>',
+        '      </button>',
+        '    </div>',
+        '    <div class="side-nav-version-tag">',
+        '      <span>StageLight Portal</span>',
+        '      <span>&bull;</span>',
+        '      <span class="status-online">&#9679; Verified</span>',
+        '    </div>',
+        '  </div>',
         '</aside>'
       ].join(''),
-      controller: ['$location', '$element', '$timeout', 'PermissionsService', function ($location, $element, $timeout, PermissionsService) {
-        var vm = this;
-        vm.perms = PermissionsService;
-        vm.drawerOpen = false;
-        vm.is = function (p) { return $location.path() === p; };
+      controller: ['$location', '$element', '$timeout', 'AuthService', 'PermissionsService',
+        function ($location, $element, $timeout, AuthService, PermissionsService) {
+          var vm = this;
+          vm.auth = AuthService;
+          vm.perms = PermissionsService;
+          vm.drawerOpen = false;
+          vm.user = AuthService.state.user;
 
-        var NAV_MAP = {
-          '/portal/dashboard': { label: 'Overview', icon: 'dashboard' },
-          '/portal/submissions': { label: 'My Applications', icon: 'folder' },
-          '/portal/submissions/new': { label: 'Submit Demo', icon: 'plus-circle' },
-          '/portal/voting': { label: 'Nominee Votes & QR', icon: 'qr-code' },
-          '/portal/profile': { label: 'Profile', icon: 'user' },
-          '/portal/notifications': { label: 'Notifications', icon: 'bell' },
-          '/portal/security': { label: 'Verification & Security', icon: 'lock' }
-        };
+          vm.is = function (p) { return $location.path() === p; };
 
-        vm.currentLabel = function () {
-          var item = NAV_MAP[$location.path()];
-          return item ? item.label : 'Contestant Portal';
-        };
-        vm.currentIcon = function () {
-          var item = NAV_MAP[$location.path()];
-          return item ? item.icon : 'user';
-        };
+          var NAV_MAP = {
+            '/portal/dashboard': { label: 'Overview', icon: 'dashboard' },
+            '/portal/submissions': { label: 'My Applications', icon: 'folder' },
+            '/portal/submissions/new': { label: 'Submit Demo', icon: 'plus-circle' },
+            '/portal/voting': { label: 'Nominee Votes & QR', icon: 'qr-code' },
+            '/portal/profile': { label: 'Profile', icon: 'user' },
+            '/portal/notifications': { label: 'Notifications', icon: 'bell' },
+            '/portal/security': { label: 'Verification & Security', icon: 'lock' }
+          };
 
-        vm.$postLink = function () {
-          var aside = $element[0] && $element[0].querySelector('aside.side-nav');
-          if (!aside) return;
-          aside.scrollTop = savedPortalScrollTop;
-          angular.element(aside).on('scroll', function () {
-            savedPortalScrollTop = aside.scrollTop;
-          });
-          $timeout(function () {
-            var activeEl = aside.querySelector('a.active');
-            if (activeEl && activeEl.scrollIntoView) {
-              activeEl.scrollIntoView({ block: 'nearest' });
-            }
-          }, 0, false);
-        };
-      }]
+          vm.currentLabel = function () {
+            var item = NAV_MAP[$location.path()];
+            return item ? item.label : 'Contestant Portal';
+          };
+          vm.currentIcon = function () {
+            var item = NAV_MAP[$location.path()];
+            return item ? item.icon : 'user';
+          };
+
+          vm.primaryRole = function () {
+            var u = vm.user || (AuthService.state && AuthService.state.user);
+            if (!u || !u.roles || !u.roles.length) return 'Contestant';
+            var r = u.roles[0];
+            var names = {
+              'NOMINEE': 'Nominee Contestant',
+              'APPLICANT': 'Applicant',
+              'SUPER_ADMIN': 'Super Admin',
+              'COMPETITION_MANAGER': 'Comp Manager'
+            };
+            return names[r] || r;
+          };
+
+          vm.logout = function () {
+            AuthService.logout();
+          };
+
+          vm.$postLink = function () {
+            var scrollEl = $element[0] && ($element[0].querySelector('.side-nav-body') || $element[0].querySelector('aside.side-nav'));
+            if (!scrollEl) return;
+            scrollEl.scrollTop = savedPortalScrollTop;
+            angular.element(scrollEl).on('scroll', function () {
+              savedPortalScrollTop = scrollEl.scrollTop;
+            });
+            $timeout(function () {
+              var activeEl = scrollEl.querySelector('a.active');
+              if (activeEl && activeEl.scrollIntoView) {
+                activeEl.scrollIntoView({ block: 'nearest' });
+              }
+            }, 0, false);
+          };
+        }]
     })
     .controller('PortalLoginController', ['$location', 'AuthService', 'PermissionsService', 'ToastService',
       function ($location, AuthService, PermissionsService, ToastService) {

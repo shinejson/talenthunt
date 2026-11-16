@@ -36,64 +36,116 @@
         '<aside class="side-nav" ng-class="{\'drawer-open\': $ctrl.drawerOpen}" aria-label="Admin Navigation">',
         '  <div class="side-nav-header">',
         '    <div class="side-nav-title"><th-icon name="shield" size="15"></th-icon><span>Admin Console</span></div>',
+        '    <span class="side-nav-status-badge"><span class="status-dot"></span> Live</span>',
         '  </div>',
-        '  <div class="side-nav-section-label">Overview</div>',
-        '  <a href="/admin" ng-click="$ctrl.drawerOpen=false" ng-class="{active: $ctrl.is(\'/admin\')}"><th-icon name="dashboard" size="17"></th-icon><span>KPI Overview</span></a>',
+        '  <div class="side-nav-body">',
+        '    <div class="side-nav-section-label">Overview</div>',
+        '    <a href="/admin" ng-click="$ctrl.drawerOpen=false" ng-class="{active: $ctrl.is(\'/admin\')}"><th-icon name="dashboard" size="17"></th-icon><span>KPI Overview</span></a>',
 
-        '  <div class="side-nav-section-label" ng-if="$ctrl.perms.canManageCompetition()">Competition Setup</div>',
-        '  <a ng-if="$ctrl.perms.canManageCompetition()" href="/admin/competitions" ng-click="$ctrl.drawerOpen=false" ng-class="{active: $ctrl.is(\'/admin/competitions\')}"><th-icon name="trophy" size="17"></th-icon><span>Competitions</span></a>',
-        '  <a ng-if="$ctrl.perms.canManageCompetition()" href="/admin/categories" ng-click="$ctrl.drawerOpen=false" ng-class="{active: $ctrl.is(\'/admin/categories\')}"><th-icon name="layers" size="17"></th-icon><span>Categories</span></a>',
-        '  <a ng-if="$ctrl.perms.canManageCompetition()" href="/admin/rounds" ng-click="$ctrl.drawerOpen=false" ng-class="{active: $ctrl.is(\'/admin/rounds\')}"><th-icon name="clock" size="17"></th-icon><span>Rounds &amp; Packages</span></a>',
-        '  <a ng-if="$ctrl.perms.canManageCompetition()" href="/admin/eliminations" ng-click="$ctrl.drawerOpen=false" ng-class="{active: $ctrl.is(\'/admin/eliminations\')}"><th-icon name="target" size="17"></th-icon><span>Eliminations</span></a>',
+        '    <div class="side-nav-section-label" ng-if="$ctrl.perms.canManageCompetition()">Competition Setup</div>',
+        '    <a ng-if="$ctrl.perms.canManageCompetition()" href="/admin/competitions" ng-click="$ctrl.drawerOpen=false" ng-class="{active: $ctrl.is(\'/admin/competitions\')}"><th-icon name="trophy" size="17"></th-icon><span>Competitions</span></a>',
+        '    <a ng-if="$ctrl.perms.canManageCompetition()" href="/admin/categories" ng-click="$ctrl.drawerOpen=false" ng-class="{active: $ctrl.is(\'/admin/categories\')}"><th-icon name="layers" size="17"></th-icon><span>Categories</span></a>',
+        '    <a ng-if="$ctrl.perms.canManageCompetition()" href="/admin/rounds" ng-click="$ctrl.drawerOpen=false" ng-class="{active: $ctrl.is(\'/admin/rounds\')}"><th-icon name="clock" size="17"></th-icon><span>Rounds &amp; Packages</span></a>',
+        '    <a ng-if="$ctrl.perms.canManageCompetition()" href="/admin/eliminations" ng-click="$ctrl.drawerOpen=false" ng-class="{active: $ctrl.is(\'/admin/eliminations\')}"><th-icon name="target" size="17"></th-icon><span>Eliminations</span></a>',
 
-        '  <div class="side-nav-section-label" ng-if="$ctrl.perms.canReview() || $ctrl.perms.canModerate() || $ctrl.perms.canManageCompetition() || $ctrl.perms.canFinance()">Talent &amp; Trust</div>',
-        '  <a ng-if="$ctrl.perms.canReview() || $ctrl.perms.canModerate()" href="/admin/submissions" ng-click="$ctrl.drawerOpen=false" ng-class="{active: $ctrl.is(\'/admin/submissions\')}"><th-icon name="clipboard-check" size="17"></th-icon><span>Review Queue</span></a>',
-        '  <a ng-if="$ctrl.perms.canManageCompetition() || $ctrl.perms.canModerate() || $ctrl.perms.canFinance()" href="/admin/nominees" ng-click="$ctrl.drawerOpen=false" ng-class="{active: $ctrl.is(\'/admin/nominees\')}"><th-icon name="award" size="17"></th-icon><span>Nominees</span></a>',
-        '  <a ng-if="$ctrl.perms.canManageCompetition() || $ctrl.perms.canModerate() || $ctrl.perms.canFinance()" href="/admin/sponsors-partners" ng-click="$ctrl.drawerOpen=false" ng-class="{active: $ctrl.is(\'/admin/sponsors-partners\')}"><th-icon name="handshake" size="17"></th-icon><span>Sponsors &amp; Partners</span></a>',
-        '  <a ng-if="$ctrl.perms.canModerate() || $ctrl.perms.canFinance()" href="/admin/moderation" ng-click="$ctrl.drawerOpen=false" ng-class="{active: $ctrl.is(\'/admin/moderation\')}"><th-icon name="shield-alert" size="17"></th-icon><span>Moderation &amp; Support</span></a>',
+        '    <div class="side-nav-section-label" ng-if="$ctrl.perms.canReview() || $ctrl.perms.canModerate() || $ctrl.perms.canManageCompetition() || $ctrl.perms.canFinance()">Talent &amp; Trust</div>',
+        '    <a ng-if="$ctrl.perms.canReview() || $ctrl.perms.canModerate()" href="/admin/submissions" ng-click="$ctrl.drawerOpen=false" ng-class="{active: $ctrl.is(\'/admin/submissions\')}"><th-icon name="clipboard-check" size="17"></th-icon><span>Review Queue</span></a>',
+        '    <a ng-if="$ctrl.perms.canManageCompetition() || $ctrl.perms.canModerate() || $ctrl.perms.canFinance()" href="/admin/nominees" ng-click="$ctrl.drawerOpen=false" ng-class="{active: $ctrl.is(\'/admin/nominees\')}"><th-icon name="award" size="17"></th-icon><span>Nominees</span></a>',
+        '    <a ng-if="$ctrl.perms.canManageCompetition() || $ctrl.perms.canModerate() || $ctrl.perms.canFinance()" href="/admin/sponsors-partners" ng-click="$ctrl.drawerOpen=false" ng-class="{active: $ctrl.is(\'/admin/sponsors-partners\')}"><th-icon name="handshake" size="17"></th-icon><span>Sponsors &amp; Partners</span></a>',
+        '    <a ng-if="$ctrl.perms.canModerate() || $ctrl.perms.canFinance()" href="/admin/moderation" ng-click="$ctrl.drawerOpen=false" ng-class="{active: $ctrl.is(\'/admin/moderation\')}"><th-icon name="shield-alert" size="17"></th-icon><span>Moderation &amp; Support</span></a>',
 
-        '  <div class="side-nav-section-label" ng-if="$ctrl.perms.canFinance()">Finance &amp; Ledger</div>',
-        '  <a ng-if="$ctrl.perms.canFinance()" href="/admin/votes" ng-click="$ctrl.drawerOpen=false" ng-class="{active: $ctrl.is(\'/admin/votes\')}"><th-icon name="book-ledger" size="17"></th-icon><span>Vote Ledger</span></a>',
-        '  <a ng-if="$ctrl.perms.canFinance()" href="/admin/orders" ng-click="$ctrl.drawerOpen=false" ng-class="{active: $ctrl.is(\'/admin/orders\')}"><th-icon name="receipt" size="17"></th-icon><span>Orders</span></a>',
-        '  <a ng-if="$ctrl.perms.canFinance()" href="/admin/reconciliation" ng-click="$ctrl.drawerOpen=false" ng-class="{active: $ctrl.is(\'/admin/reconciliation\')}"><th-icon name="credit-card" size="17"></th-icon><span>Payments &amp; Reconcile</span></a>',
-        '  <a ng-if="$ctrl.perms.canFinance()" href="/admin/reports" ng-click="$ctrl.drawerOpen=false" ng-class="{active: $ctrl.is(\'/admin/reports\')}"><th-icon name="pie-chart" size="17"></th-icon><span>Reports &amp; CSV</span></a>',
-        '  <a ng-if="$ctrl.perms.canFinance()" href="/admin/audit-logs" ng-click="$ctrl.drawerOpen=false" ng-class="{active: $ctrl.is(\'/admin/audit-logs\')}"><th-icon name="history" size="17"></th-icon><span>Audit Logs</span></a>',
+        '    <div class="side-nav-section-label" ng-if="$ctrl.perms.canFinance()">Finance &amp; Ledger</div>',
+        '    <a ng-if="$ctrl.perms.canFinance()" href="/admin/votes" ng-click="$ctrl.drawerOpen=false" ng-class="{active: $ctrl.is(\'/admin/votes\')}"><th-icon name="book-ledger" size="17"></th-icon><span>Vote Ledger</span></a>',
+        '    <a ng-if="$ctrl.perms.canFinance()" href="/admin/orders" ng-click="$ctrl.drawerOpen=false" ng-class="{active: $ctrl.is(\'/admin/orders\')}"><th-icon name="receipt" size="17"></th-icon><span>Orders</span></a>',
+        '    <a ng-if="$ctrl.perms.canFinance()" href="/admin/reconciliation" ng-click="$ctrl.drawerOpen=false" ng-class="{active: $ctrl.is(\'/admin/reconciliation\')}"><th-icon name="credit-card" size="17"></th-icon><span>Payments &amp; Reconcile</span></a>',
+        '    <a ng-if="$ctrl.perms.canFinance()" href="/admin/reports" ng-click="$ctrl.drawerOpen=false" ng-class="{active: $ctrl.is(\'/admin/reports\')}"><th-icon name="pie-chart" size="17"></th-icon><span>Reports &amp; CSV</span></a>',
+        '    <a ng-if="$ctrl.perms.canFinance()" href="/admin/audit-logs" ng-click="$ctrl.drawerOpen=false" ng-class="{active: $ctrl.is(\'/admin/audit-logs\')}"><th-icon name="history" size="17"></th-icon><span>Audit Logs</span></a>',
 
-        '  <div class="side-nav-section-label" ng-if="$ctrl.perms.isSuperAdmin() || $ctrl.perms.canManageCompetition()">Administration</div>',
-        '  <a ng-if="$ctrl.perms.isSuperAdmin()" href="/admin/users" ng-click="$ctrl.drawerOpen=false" ng-class="{active: $ctrl.is(\'/admin/users\')}"><th-icon name="users" size="17"></th-icon><span>Users &amp; Roles</span></a>',
-        '  <a ng-if="$ctrl.perms.canManageCompetition()" href="/admin/settings" ng-click="$ctrl.drawerOpen=false" ng-class="{active: $ctrl.is(\'/admin/settings\')}"><th-icon name="settings" size="17"></th-icon><span>Platform Settings</span></a>',
+        '    <div class="side-nav-section-label" ng-if="$ctrl.perms.isSuperAdmin() || $ctrl.perms.canManageCompetition()">Administration</div>',
+        '    <a ng-if="$ctrl.perms.isSuperAdmin()" href="/admin/users" ng-click="$ctrl.drawerOpen=false" ng-class="{active: $ctrl.is(\'/admin/users\')}"><th-icon name="users" size="17"></th-icon><span>Users &amp; Roles</span></a>',
+        '    <a ng-if="$ctrl.perms.canManageCompetition()" href="/admin/settings" ng-click="$ctrl.drawerOpen=false" ng-class="{active: $ctrl.is(\'/admin/settings\')}"><th-icon name="settings" size="17"></th-icon><span>Platform Settings</span></a>',
+        '  </div>',
+        '  <div class="side-nav-footer">',
+        '    <div class="side-nav-user-card" ng-if="$ctrl.user">',
+        '      <div class="side-nav-user-avatar">{{ $ctrl.user.full_name | initials }}</div>',
+        '      <div class="side-nav-user-info">',
+        '        <div class="side-nav-user-name" title="{{ $ctrl.user.full_name }}">{{ $ctrl.user.full_name }}</div>',
+        '        <div class="side-nav-user-role">{{ $ctrl.primaryRole() }}</div>',
+        '      </div>',
+        '    </div>',
+        '    <div class="side-nav-footer-actions">',
+        '      <a href="/" class="side-nav-footer-btn" title="View Public Website">',
+        '        <th-icon name="home" size="14"></th-icon><span>Public Site</span>',
+        '      </a>',
+        '      <a href="/portal/dashboard" class="side-nav-footer-btn" title="Go to Contestant Portal">',
+        '        <th-icon name="user" size="14"></th-icon><span>My Portal</span>',
+        '      </a>',
+        '      <button type="button" class="side-nav-footer-btn btn-signout" ng-click="$ctrl.logout()" title="Sign Out">',
+        '        <th-icon name="log-out" size="14"></th-icon><span>Sign Out</span>',
+        '      </button>',
+        '    </div>',
+        '    <div class="side-nav-version-tag">',
+        '      <span>StageLight Admin</span>',
+        '      <span>&bull;</span>',
+        '      <span class="status-online">&#9679; v1.0 Live</span>',
+        '    </div>',
+        '  </div>',
         '</aside>'
       ].join(''),
-      controller: ['$location', '$element', '$timeout', 'PermissionsService', function ($location, $element, $timeout, PermissionsService) {
-        var vm = this;
-        vm.perms = PermissionsService;
-        vm.drawerOpen = false;
-        vm.is = function (p) { return $location.path() === p; };
+      controller: ['$location', '$element', '$timeout', 'AuthService', 'PermissionsService',
+        function ($location, $element, $timeout, AuthService, PermissionsService) {
+          var vm = this;
+          vm.auth = AuthService;
+          vm.perms = PermissionsService;
+          vm.drawerOpen = false;
+          vm.user = AuthService.state.user;
 
-        vm.currentLabel = function () {
-          var item = ADMIN_NAV_META[$location.path()];
-          return item ? item.label : 'Admin Console';
-        };
-        vm.currentIcon = function () {
-          var item = ADMIN_NAV_META[$location.path()];
-          return item ? item.icon : 'shield';
-        };
+          vm.is = function (p) { return $location.path() === p; };
 
-        vm.$postLink = function () {
-          var aside = $element[0] && $element[0].querySelector('aside.side-nav');
-          if (!aside) return;
-          aside.scrollTop = savedAdminScrollTop;
-          angular.element(aside).on('scroll', function () {
-            savedAdminScrollTop = aside.scrollTop;
-          });
-          $timeout(function () {
-            var activeEl = aside.querySelector('a.active');
-            if (activeEl && activeEl.scrollIntoView) {
-              activeEl.scrollIntoView({ block: 'nearest' });
-            }
-          }, 0, false);
-        };
-      }]
+          vm.currentLabel = function () {
+            var item = ADMIN_NAV_META[$location.path()];
+            return item ? item.label : 'Admin Console';
+          };
+          vm.currentIcon = function () {
+            var item = ADMIN_NAV_META[$location.path()];
+            return item ? item.icon : 'shield';
+          };
+
+          vm.primaryRole = function () {
+            var u = vm.user || (AuthService.state && AuthService.state.user);
+            if (!u || !u.roles || !u.roles.length) return 'Administrator';
+            var r = u.roles[0];
+            var names = {
+              'SUPER_ADMIN': 'Super Admin',
+              'COMPETITION_MANAGER': 'Comp Manager',
+              'REVIEWER': 'Reviewer / Judge',
+              'FINANCE_OFFICER': 'Finance Officer',
+              'MODERATOR': 'Moderator',
+              'NOMINEE': 'Nominee Contestant',
+              'APPLICANT': 'Applicant'
+            };
+            return names[r] || r;
+          };
+
+          vm.logout = function () {
+            AuthService.logout();
+          };
+
+          vm.$postLink = function () {
+            var scrollEl = $element[0] && ($element[0].querySelector('.side-nav-body') || $element[0].querySelector('aside.side-nav'));
+            if (!scrollEl) return;
+            scrollEl.scrollTop = savedAdminScrollTop;
+            angular.element(scrollEl).on('scroll', function () {
+              savedAdminScrollTop = scrollEl.scrollTop;
+            });
+            $timeout(function () {
+              var activeEl = scrollEl.querySelector('a.active');
+              if (activeEl && activeEl.scrollIntoView) {
+                activeEl.scrollIntoView({ block: 'nearest' });
+              }
+            }, 0, false);
+          };
+        }]
     })
     .controller('AdminDashboardController', ['$rootScope', 'ApiService', 'PermissionsService', 'ToastService', 'AdminFilterUtils',
       function ($rootScope, ApiService, PermissionsService, ToastService, AdminFilterUtils) {

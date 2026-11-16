@@ -4,7 +4,33 @@
   angular.module('talentHuntApp')
     .component('thFooter', {
       template: [
-        '<footer class="site-footer" role="contentinfo">',
+        '<!-- DEDICATED MODERN ADMIN FOOTER -->',
+        '<footer class="admin-footer" ng-if="$ctrl.isAdmin" role="contentinfo">',
+        '  <div class="admin-footer-inner">',
+        '    <div class="admin-footer-left">',
+        '      <span class="admin-sys-status"><span class="status-dot"></span> All Systems Operational</span>',
+        '      <span class="footer-sep">&bull;</span>',
+        '      <span>StageLight Ghana &mdash; Admin Operations Console v1.0</span>',
+        '      <span class="footer-sep">&bull;</span>',
+        '      <span class="muted">Accra (GMT+0)</span>',
+        '    </div>',
+        '    <div class="admin-footer-middle">',
+        '      <span class="admin-metric-pill">&#128274; 100% Audit Coverage</span>',
+        '      <span class="admin-metric-pill">&#128220; Immutable Ledger</span>',
+        '      <span class="admin-metric-pill">&#9878; Top-N Progression</span>',
+        '    </div>',
+        '    <div class="admin-footer-right">',
+        '      <a href="/admin/audit-logs">Audit Trail</a>',
+        '      <a href="/admin/reconciliation">Reconciliation</a>',
+        '      <a href="/admin/settings">Platform Settings</a>',
+        '      <a href="/api/v1/health" target="_blank" rel="noopener noreferrer">API Health</a>',
+        '      <a href="/" target="_blank">Public Site &rarr;</a>',
+        '    </div>',
+        '  </div>',
+        '</footer>',
+
+        '<!-- PUBLIC WEBSITE FOOTER -->',
+        '<footer class="site-footer" ng-if="!$ctrl.isAdmin" role="contentinfo">',
         '  <div class="container">',
         '    <div class="footer-grid">',
         '      <div>',
@@ -52,6 +78,15 @@
         '    </div>',
         '  </div>',
         '</footer>'
-      ].join('')
+      ].join(''),
+      controller: ['$location', '$rootScope', function ($location, $rootScope) {
+        var vm = this;
+        function update() {
+          var p = $location.path() || '/';
+          vm.isAdmin = p === '/admin' || p.indexOf('/admin/') === 0;
+        }
+        update();
+        $rootScope.$on('$routeChangeSuccess', update);
+      }]
     });
 })();

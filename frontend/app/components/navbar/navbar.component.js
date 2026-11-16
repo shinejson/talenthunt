@@ -1,10 +1,119 @@
 (function () {
   'use strict';
 
+  var ADMIN_PAGES = [
+    { path: '/admin', label: 'KPI Overview', icon: 'dashboard', section: 'Overview' },
+    { path: '/admin/competitions', label: 'Competitions', icon: 'trophy', section: 'Competition Setup' },
+    { path: '/admin/categories', label: 'Categories', icon: 'layers', section: 'Competition Setup' },
+    { path: '/admin/rounds', label: 'Rounds & Packages', icon: 'clock', section: 'Competition Setup' },
+    { path: '/admin/eliminations', label: 'Eliminations', icon: 'target', section: 'Competition Setup' },
+    { path: '/admin/submissions', label: 'Review Queue', icon: 'clipboard-check', section: 'Talent & Trust' },
+    { path: '/admin/nominees', label: 'Nominees', icon: 'award', section: 'Talent & Trust' },
+    { path: '/admin/sponsors-partners', label: 'Sponsors & Partners', icon: 'handshake', section: 'Talent & Trust' },
+    { path: '/admin/moderation', label: 'Moderation & Support', icon: 'shield-alert', section: 'Talent & Trust' },
+    { path: '/admin/votes', label: 'Vote Ledger', icon: 'book-ledger', section: 'Finance & Ledger' },
+    { path: '/admin/orders', label: 'Orders', icon: 'receipt', section: 'Finance & Ledger' },
+    { path: '/admin/reconciliation', label: 'Payments & Reconcile', icon: 'credit-card', section: 'Finance & Ledger' },
+    { path: '/admin/reports', label: 'Reports & CSV', icon: 'pie-chart', section: 'Finance & Ledger' },
+    { path: '/admin/audit-logs', label: 'Audit Logs', icon: 'history', section: 'Finance & Ledger' },
+    { path: '/admin/users', label: 'Users & Roles', icon: 'users', section: 'Administration' },
+    { path: '/admin/settings', label: 'Platform Settings', icon: 'settings', section: 'Administration' }
+  ];
+
+  var ADMIN_MAP = {};
+  ADMIN_PAGES.forEach(function (item) {
+    ADMIN_MAP[item.path] = item;
+  });
+
   angular.module('talentHuntApp')
     .component('thNavbar', {
       template: [
-        '<header class="site-navbar" role="banner">',
+        '<!-- DEDICATED MODERN ADMIN TOPNAV -->',
+        '<header class="admin-navbar" ng-if="$ctrl.isAdmin" role="banner">',
+        '  <div class="admin-navbar-bar">',
+        '    <div class="admin-navbar-inner">',
+        '      <!-- Left: Mobile Toggle, Admin Brand & Breadcrumbs -->',
+        '      <div class="admin-nav-left">',
+        '        <button type="button" class="admin-mobile-toggle" ng-click="$ctrl.toggleSidebarDrawer()" aria-label="Toggle Admin Sidebar Menu">',
+        '          <th-icon name="menu" size="18"></th-icon>',
+        '        </button>',
+        '        <a href="/admin" class="admin-brand-pill">',
+        '          <span class="admin-brand-icon"><th-icon name="shield" size="15"></th-icon></span>',
+        '          <span class="admin-brand-text">StageLight <strong style="color:var(--accent-gold);">Admin</strong></span>',
+        '        </a>',
+        '        <div class="admin-breadcrumbs">',
+        '          <span class="admin-bc-sep">/</span>',
+        '          <span class="admin-bc-section">{{ $ctrl.adminSection }}</span>',
+        '          <span class="admin-bc-sep">&rsaquo;</span>',
+        '          <span class="admin-bc-page">',
+        '            <th-icon name="{{ $ctrl.adminPageIcon }}" size="13"></th-icon>',
+        '            <strong>{{ $ctrl.adminPageTitle }}</strong>',
+        '          </span>',
+        '        </div>',
+        '      </div>',
+
+        '      <!-- Center: Quick Jump Search Bar -->',
+        '      <div class="admin-nav-search-wrap">',
+        '        <div class="admin-nav-search-box">',
+        '          <th-icon name="search" size="14"></th-icon>',
+        '          <input type="text"',
+        '                 id="adminGlobalSearchInput"',
+        '                 class="admin-nav-search-input"',
+        '                 ng-model="$ctrl.searchQuery"',
+        '                 ng-focus="$ctrl.onSearchFocus()"',
+        '                 ng-change="$ctrl.onSearchInput()"',
+        '                 ng-blur="$ctrl.onSearchBlur()"',
+        '                 ng-keydown="$ctrl.onSearchKey($event)"',
+        '                 placeholder="Quick jump to admin section... (Press / to search)" />',
+        '          <span class="admin-search-kbd">/</span>',
+        '        </div>',
+        '        <div class="admin-search-dropdown" ng-if="$ctrl.searchActive && $ctrl.filteredNav.length">',
+        '          <div class="admin-search-item"',
+        '               ng-repeat="item in $ctrl.filteredNav"',
+        '               ng-mousedown="$ctrl.navigateTo(item.path)">',
+        '            <th-icon name="{{ item.icon }}" size="15"></th-icon>',
+        '            <div>',
+        '              <div class="admin-search-label">{{ item.label }}</div>',
+        '              <div class="admin-search-sub">{{ item.section }} &bull; {{ item.path }}</div>',
+        '            </div>',
+        '          </div>',
+        '        </div>',
+        '      </div>',
+
+        '      <!-- Right: Status Badge & Admin Profile -->',
+        '      <div class="admin-nav-right">',
+        '        <div class="admin-env-pill" title="Sandbox Mode: Mock Payment & Verification Gateway Active">',
+        '          <span class="admin-env-dot"></span>',
+        '          <span>SANDBOX &bull; GHS</span>',
+        '        </div>',
+
+        '        <a href="/" target="_blank" class="admin-icon-btn" title="Open Public Website in new tab">',
+        '          <th-icon name="compass" size="15"></th-icon>',
+        '          <span class="admin-btn-label">Public Site</span>',
+        '        </a>',
+
+        '        <a href="/portal/dashboard" class="admin-icon-btn" title="Go to Contestant Portal">',
+        '          <th-icon name="user" size="15"></th-icon>',
+        '          <span class="admin-btn-label">Portal</span>',
+        '        </a>',
+
+        '        <div class="admin-profile-pill" ng-if="$ctrl.auth.isAuthenticated()">',
+        '          <div class="admin-profile-avatar">{{ $ctrl.auth.state.user.full_name | initials }}</div>',
+        '          <div class="admin-profile-meta">',
+        '            <span class="admin-profile-name">{{ $ctrl.auth.state.user.full_name.split(" ")[0] }}</span>',
+        '            <span class="admin-profile-role">{{ $ctrl.primaryRole() }}</span>',
+        '          </div>',
+        '          <button type="button" class="admin-logout-btn" ng-click="$ctrl.logout()" title="Sign Out">',
+        '            <th-icon name="log-out" size="14"></th-icon>',
+        '          </button>',
+        '        </div>',
+        '      </div>',
+        '    </div>',
+        '  </div>',
+        '</header>',
+
+        '<!-- PUBLIC WEBSITE NAVBAR -->',
+        '<header class="site-navbar" ng-if="!$ctrl.isAdmin" role="banner">',
         '  <div class="navbar-fixed-bar">',
         '    <div class="incident-banner" ng-if="$ctrl.incident && $ctrl.incident.message">',
         '      &#9888; {{ $ctrl.incident.message }}',
@@ -55,17 +164,30 @@
         '  </div>',
         '</header>'
       ].join(''),
-      controller: ['$location', '$element', '$timeout', '$window', '$scope', 'AuthService', 'PermissionsService', 'ApiService', 'ToastService',
-        function ($location, $element, $timeout, $window, $scope, AuthService, PermissionsService, ApiService, ToastService) {
+      controller: ['$location', '$element', '$timeout', '$window', '$scope', '$rootScope', 'AuthService', 'PermissionsService', 'ApiService', 'ToastService',
+        function ($location, $element, $timeout, $window, $scope, $rootScope, AuthService, PermissionsService, ApiService, ToastService) {
           var vm = this;
           vm.auth = AuthService;
           vm.perms = PermissionsService;
           vm.menuOpen = false;
           vm.incident = null;
+          vm.isAdmin = false;
+          vm.searchQuery = '';
+          vm.searchActive = false;
+          vm.filteredNav = [];
+
+          function updateAdminState() {
+            var p = $location.path() || '/';
+            vm.isAdmin = p === '/admin' || p.indexOf('/admin/') === 0;
+            var meta = ADMIN_MAP[p] || { label: 'Admin Console', icon: 'shield', section: 'Overview' };
+            vm.adminPageTitle = meta.label;
+            vm.adminPageIcon = meta.icon;
+            vm.adminSection = meta.section;
+          }
 
           function syncNavbarHeight() {
             $timeout(function () {
-              var bar = $element[0] && $element[0].querySelector('.navbar-fixed-bar');
+              var bar = $element[0] && ($element[0].querySelector('.admin-navbar-bar') || $element[0].querySelector('.navbar-fixed-bar'));
               if (bar && bar.offsetHeight) {
                 document.documentElement.style.setProperty('--navbar-height', (bar.offsetHeight + 1) + 'px');
               }
@@ -79,14 +201,85 @@
             });
           }
 
+          vm.onSearchFocus = function () {
+            vm.searchActive = true;
+            vm.onSearchInput();
+          };
+
+          vm.onSearchInput = function () {
+            var q = (vm.searchQuery || '').trim().toLowerCase();
+            if (!q) {
+              vm.filteredNav = ADMIN_PAGES.slice(0, 7);
+              return;
+            }
+            vm.filteredNav = ADMIN_PAGES.filter(function (item) {
+              return item.label.toLowerCase().indexOf(q) !== -1 ||
+                     item.section.toLowerCase().indexOf(q) !== -1 ||
+                     item.path.toLowerCase().indexOf(q) !== -1;
+            });
+          };
+
+          vm.navigateTo = function (path) {
+            vm.searchActive = false;
+            vm.searchQuery = '';
+            $location.path(path);
+          };
+
+          vm.onSearchBlur = function () {
+            $timeout(function () {
+              vm.searchActive = false;
+            }, 250);
+          };
+
+          vm.onSearchKey = function (e) {
+            if (e.keyCode === 13) { // Enter
+              if (vm.filteredNav && vm.filteredNav.length > 0) {
+                vm.navigateTo(vm.filteredNav[0].path);
+              }
+            } else if (e.keyCode === 27) { // Escape
+              vm.searchActive = false;
+            }
+          };
+
+          vm.toggleSidebarDrawer = function () {
+            $rootScope.$broadcast('toggleAdminDrawer');
+          };
+
+          vm.primaryRole = function () {
+            var u = vm.auth.state && vm.auth.state.user;
+            if (!u || !u.roles || !u.roles.length) return 'ADMIN';
+            var names = {
+              'SUPER_ADMIN': 'Super Admin',
+              'COMPETITION_MANAGER': 'Manager',
+              'REVIEWER': 'Judge',
+              'FINANCE_OFFICER': 'Finance',
+              'MODERATOR': 'Moderator'
+            };
+            return names[u.roles[0]] || u.roles[0];
+          };
+
+          function onGlobalKeyDown(e) {
+            if (e.key === '/' && vm.isAdmin && document.activeElement && document.activeElement.tagName !== 'INPUT' && document.activeElement.tagName !== 'TEXTAREA') {
+              e.preventDefault();
+              var input = document.getElementById('adminGlobalSearchInput');
+              if (input) {
+                input.focus();
+                input.select();
+              }
+            }
+          }
+
           vm.$onInit = function () {
+            updateAdminState();
             syncNavbarHeight();
             fetchIncident();
             angular.element($window).on('resize', syncNavbarHeight);
+            angular.element($window).on('keydown', onGlobalKeyDown);
           };
 
           vm.$onDestroy = function () {
             angular.element($window).off('resize', syncNavbarHeight);
+            angular.element($window).off('keydown', onGlobalKeyDown);
           };
 
           $scope.$on('incidentBannerChanged', function () {
@@ -95,6 +288,9 @@
 
           $scope.$on('$routeChangeSuccess', function () {
             vm.menuOpen = false;
+            vm.searchActive = false;
+            vm.searchQuery = '';
+            updateAdminState();
             syncNavbarHeight();
           });
 
