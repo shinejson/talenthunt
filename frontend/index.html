@@ -1,0 +1,81 @@
+<!DOCTYPE html>
+<html lang="en" ng-app="talentHuntApp">
+<head>
+  <meta charset="utf-8" />
+  <base href="/" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>StageLight Ghana &mdash; Talent Hunt &amp; Verified Public Voting</title>
+  <meta name="description" content="Submit your talent demo, earn official nomination, share your unique voting link, and advance through transparent, ledger-verified voting rounds." />
+  <meta property="og:title" content="StageLight Ghana Talent Hunt" />
+  <meta property="og:description" content="Discovering Ghana's brightest voices, dancers, poets, and live performers." />
+  <meta property="og:type" content="website" />
+  <link rel="stylesheet" href="/styles/main.css" />
+</head>
+<body>
+  <div class="app-shell">
+    <th-navbar></th-navbar>
+    <main class="main-content" ng-view></main>
+    <th-footer></th-footer>
+  </div>
+
+  <!-- Toast Notifications -->
+  <div class="toast-stack" aria-live="polite">
+    <div class="toast-item" ng-repeat="t in toasts" ng-class="{'toast-error': t.kind === 'error', 'toast-success': t.kind === 'success'}">
+      <span>{{ t.message }}</span>
+      <button type="button" style="background:none;border:none;color:#fff;cursor:pointer;font-size:1rem;" ng-click="dismissToast(t.id)" aria-label="Dismiss">&times;</button>
+    </div>
+  </div>
+
+  <!-- Vendored AngularJS 1.8.3 + Chart.js -->
+  <script src="/vendor/angular.min.js"></script>
+  <script src="/vendor/angular-route.min.js"></script>
+  <script src="/vendor/angular-sanitize.min.js"></script>
+  <script src="/vendor/chart.umd.js"></script>
+
+  <!-- App Module & Core Services -->
+  <script src="/app/app.module.js"></script>
+  <script src="/app/core/toast.service.js"></script>
+  <script src="/app/core/http-interceptor.js"></script>
+  <script src="/app/core/api.service.js"></script>
+  <script src="/app/core/auth.service.js"></script>
+  <script src="/app/core/permissions.service.js"></script>
+
+  <!-- Shared Components -->
+  <script src="/app/components/navbar/navbar.component.js"></script>
+  <script src="/app/components/footer/footer.component.js"></script>
+  <script src="/app/components/status-badge/status-badge.component.js"></script>
+  <script src="/app/components/pagination/pagination.component.js"></script>
+  <script src="/app/components/upload-field/upload-field.directive.js"></script>
+  <script src="/app/components/vote-package/vote-package.component.js"></script>
+
+  <!-- Public Views -->
+  <script src="/app/public/home/home.controller.js"></script>
+  <script src="/app/public/competitions/competitions.controller.js"></script>
+  <script src="/app/public/nominees/nominees.controller.js"></script>
+  <script src="/app/public/nominee-profile/nominee-profile.controller.js"></script>
+  <script src="/app/public/voting/voting.controller.js"></script>
+  <script src="/app/public/results/results.controller.js"></script>
+  <script src="/app/public/info/info.controller.js"></script>
+
+  <!-- Contestant & Nominee Portal Views -->
+  <script src="/app/portal/dashboard/portal-auth-and-dashboard.controller.js"></script>
+  <script src="/app/portal/submissions/portal-submissions.controller.js"></script>
+  <script src="/app/portal/voting-dashboard/voting-dashboard.controller.js"></script>
+  <script src="/app/portal/profile/portal-profile-and-security.controller.js"></script>
+  <script src="/app/portal/notifications/notifications.controller.js"></script>
+
+  <!-- Admin Console Views -->
+  <script src="/app/admin/dashboard/admin-shell-and-dashboard.controller.js"></script>
+  <script src="/app/admin/competitions/admin-competitions.controller.js"></script>
+  <script src="/app/admin/rounds/admin-rounds.controller.js"></script>
+  <script src="/app/admin/submissions/admin-submissions.controller.js"></script>
+  <script src="/app/admin/nominees/admin-nominees.controller.js"></script>
+  <script src="/app/admin/payments/admin-payments-and-votes.controller.js"></script>
+  <script src="/app/admin/eliminations/admin-eliminations.controller.js"></script>
+  <script src="/app/admin/reports/admin-reports-and-audit.controller.js"></script>
+  <script src="/app/admin/users/admin-users-moderation-settings.controller.js"></script>
+
+  <!-- Routes -->
+  <script src="/app/app.routes.js"></script>
+</body>
+</html>

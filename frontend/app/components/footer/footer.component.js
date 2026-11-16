@@ -1,0 +1,48 @@
+(function () {
+  'use strict';
+
+  angular.module('talentHuntApp')
+    .component('thFooter', {
+      template: [
+        '<footer class="site-footer" role="contentinfo">',
+        '  <div class="container">',
+        '    <div class="footer-grid">',
+        '      <div>',
+        '        <h4>StageLight Talent Hunt</h4>',
+        '        <p>Ghana-first talent discovery, auditable public voting, verified Mobile Money &amp; Card payments, and transparent multi-round progression.</p>',
+        '      </div>',
+        '      <div>',
+        '        <h4>Explore</h4>',
+        '        <ul>',
+        '          <li><a href="/competitions">Competitions</a></li>',
+        '          <li><a href="/nominees">Meet the Nominees</a></li>',
+        '          <li><a href="/results">Published Results</a></li>',
+        '          <li><a href="/how-it-works">How It Works</a></li>',
+        '        </ul>',
+        '      </div>',
+        '      <div>',
+        '        <h4>Rules &amp; Support</h4>',
+        '        <ul>',
+        '          <li><a href="/rules">Competition Rules</a></li>',
+        '          <li><a href="/faq">Frequently Asked Questions</a></li>',
+        '          <li><a href="/contact">Payment &amp; Voter Support</a></li>',
+        '        </ul>',
+        '      </div>',
+        '      <div>',
+        '        <h4>Legal &amp; Privacy</h4>',
+        '        <ul>',
+        '          <li><a href="/privacy">Privacy &amp; Data Protection</a></li>',
+        '          <li><a href="/terms">Terms of Participation</a></li>',
+        '          <li><a href="/portal/login">Contestant &amp; Admin Sign In</a></li>',
+        '        </ul>',
+        '      </div>',
+        '    </div>',
+        '    <div class="footer-bottom">',
+        '      <span>&copy; 2026 StageLight Ghana. All votes verified against immutable payment ledger.</span>',
+        '      <span>Accra, Ghana &bull; Currency: GHS</span>',
+        '    </div>',
+        '  </div>',
+        '</footer>'
+      ].join('')
+    });
+})();

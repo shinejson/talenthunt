@@ -1,0 +1,15 @@
+{
+  "name": "stagelight-frontend-angularjs",
+  "version": "1.0.0",
+  "description": "StageLight Talent Hunt Frontend (AngularJS 1.8.x SPA)",
+  "private": true,
+  "scripts": {
+    "sync-vendor": "cp node_modules/angular/angular.min.js vendor/ && cp node_modules/angular-route/angular-route.min.js vendor/ && cp node_modules/angular-sanitize/angular-sanitize.min.js vendor/ && cp node_modules/chart.js/dist/chart.umd.js vendor/"
+  },
+  "dependencies": {
+    "angular": "1.8.3",
+    "angular-route": "1.8.3",
+    "angular-sanitize": "1.8.3",
+    "chart.js": "4.4.6"
+  }
+}
