@@ -1,6 +1,29 @@
 (function () {
   'use strict';
 
+  var NOMINEE_VISUALS = {
+    'ama-gold': '/assets/images/talent-ama.jpg',
+    'kwesi-motion': '/assets/images/talent-kwesi.jpg',
+    'poetess-esi': '/assets/images/talent-esi.jpg',
+    'king-zongo-bars': '/assets/images/talent-ibrahim.jpg',
+    'kojo-laughs': '/assets/images/talent-kojo.jpg'
+  };
+  var DEFAULT_IMAGES = [
+    '/assets/images/talent-ama.jpg',
+    '/assets/images/talent-kwesi.jpg',
+    '/assets/images/talent-esi.jpg',
+    '/assets/images/talent-ibrahim.jpg',
+    '/assets/images/talent-kojo.jpg'
+  ];
+
+  function resolveImage(slug, idx) {
+    var s = (slug || '').toLowerCase();
+    for (var k in NOMINEE_VISUALS) {
+      if (s.indexOf(k) !== -1) return NOMINEE_VISUALS[k];
+    }
+    return DEFAULT_IMAGES[idx % DEFAULT_IMAGES.length];
+  }
+
   angular.module('talentHuntApp')
     .controller('NomineesDirectoryController', ['$location', 'ApiService', function ($location, ApiService) {
       var vm = this;
@@ -27,6 +50,11 @@
         vm.loading = true;
         ApiService.get('/nominees', vm.filters).then(function (res) {
           vm.nominees = res.data;
+          if (vm.nominees) {
+            vm.nominees.forEach(function (n, idx) {
+              n.image = resolveImage(n.public_slug, idx);
+            });
+          }
           vm.meta = res.meta;
           vm.loading = false;
         }, function () { vm.loading = false; });
@@ -56,29 +84,33 @@
         '  <div ng-if="!vm.loading && !vm.nominees.length" class="card empty-state">No nominees matched your search criteria.</div>',
         '  <div class="grid-3" ng-if="!vm.loading && vm.nominees.length">',
         '    <div class="card nominee-card" ng-repeat="n in vm.nominees">',
-        '      <div>',
-        '        <div class="nominee-card-top">',
-        '          <div class="nominee-avatar">{{ n.public_name | initials }}</div>',
-        '          <div>',
-        '            <h3 style="margin:0;font-size:1.1rem;"><a ng-href="/nominee/{{ n.public_slug }}">{{ n.public_name }}</a></h3>',
-        '            <div class="nominee-meta">{{ n.category_name }} &bull; {{ n.location || "Ghana" }}</div>',
-        '          </div>',
+        '      <div class="nominee-card-banner">',
+        '        <img ng-src="{{ n.image }}" alt="{{ n.public_name }}" />',
+        '        <div class="nominee-card-banner-overlay">',
+        '          <div class="nominee-avatar" style="width:40px;height:40px;font-size:0.9rem;border:2px solid #fff;">{{ n.public_name | initials }}</div>',
+        '          <span class="category-badge-pill" style="position:static;">{{ n.category_name }}</span>',
         '        </div>',
-        '        <p style="font-size:0.92rem;color:var(--text-secondary);">{{ n.tagline || (n.profile_text | limitTo:120) }}</p>',
         '      </div>',
-        '      <div>',
-        '        <div class="flex-between mb-2">',
-        '          <th-status-badge status="n.status"></th-status-badge>',
-        '          <span class="nominee-votes-pill" ng-if="n.public_votes !== undefined && n.public_votes !== null">&#9733; {{ n.public_votes | number }} votes</span>',
+        '      <div class="nominee-card-content">',
+        '        <div>',
+        '          <h3 style="margin:0;font-size:1.1rem;"><a ng-href="/nominee/{{ n.public_slug }}">{{ n.public_name }}</a></h3>',
+        '          <div class="nominee-meta mb-1">{{ n.location || "Ghana" }}</div>',
+        '          <p style="font-size:0.88rem;color:var(--text-secondary);margin:0 0 12px;">{{ n.tagline || (n.profile_text | limitTo:100) }}</p>',
         '        </div>',
-        '        <div class="inline-actions" style="width:100%;">',
-        '          <a ng-href="/nominee/{{ n.public_slug }}" class="btn btn-sm btn-secondary" style="flex:1;">View Demo</a>',
-        '          <a ng-if="n.status === \'ACTIVE\' || n.status === \'QUALIFIED\'" ng-href="{{ n.voting_path }}" class="btn btn-sm btn-primary" style="flex:1;">Vote Now</a>',
+        '        <div>',
+        '          <div class="flex-between mb-2">',
+        '            <th-status-badge status="n.status"></th-status-badge>',
+        '            <span class="nominee-votes-pill" ng-if="n.public_votes !== undefined && n.public_votes !== null">&#9733; {{ n.public_votes | number }} votes</span>',
+        '          </div>',
+        '          <div class="inline-actions" style="width:100%;">',
+        '            <a ng-href="/nominee/{{ n.public_slug }}" class="btn btn-sm btn-secondary" style="flex:1;">View Demo</a>',
+        '            <a ng-if="n.status === \'ACTIVE\' || n.status === \'QUALIFIED\'" ng-href="{{ n.voting_path }}" class="btn btn-sm btn-primary" style="flex:1;">Vote Now</a>',
+        '          </div>',
         '        </div>',
         '      </div>',
         '    </div>',
         '  </div>',
-        '  <th-pagination meta="vm.meta" on-page="vm.load(page)"></th-pagination>',
+        '  <th-pagination ng-if="vm.meta && vm.meta.pages > 1" page="vm.meta.page" pages="vm.meta.pages" on-page="vm.load(page)"></th-pagination>',
         '</div>'
       ].join(''));
     }]);

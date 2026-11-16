@@ -1,6 +1,29 @@
 (function () {
   'use strict';
 
+  var NOMINEE_VISUALS = {
+    'ama-gold': '/assets/images/talent-ama.jpg',
+    'kwesi-motion': '/assets/images/talent-kwesi.jpg',
+    'poetess-esi': '/assets/images/talent-esi.jpg',
+    'king-zongo-bars': '/assets/images/talent-ibrahim.jpg',
+    'kojo-laughs': '/assets/images/talent-kojo.jpg'
+  };
+  var DEFAULT_IMAGES = [
+    '/assets/images/talent-ama.jpg',
+    '/assets/images/talent-kwesi.jpg',
+    '/assets/images/talent-esi.jpg',
+    '/assets/images/talent-ibrahim.jpg',
+    '/assets/images/talent-kojo.jpg'
+  ];
+
+  function resolveImage(slug) {
+    var s = (slug || '').toLowerCase();
+    for (var k in NOMINEE_VISUALS) {
+      if (s.indexOf(k) !== -1) return NOMINEE_VISUALS[k];
+    }
+    return DEFAULT_IMAGES[0];
+  }
+
   angular.module('talentHuntApp')
     .controller('NomineeProfileController', ['$routeParams', '$window', 'ApiService', 'ToastService',
       function ($routeParams, $window, ApiService, ToastService) {
@@ -13,6 +36,9 @@
 
         ApiService.get('/nominees/' + $routeParams.slug).then(function (res) {
           vm.nominee = res.data;
+          if (vm.nominee) {
+            vm.nominee.image = resolveImage(vm.nominee.public_slug);
+          }
           vm.shareUrl = $window.location.origin + (vm.nominee.voting_path || ('/nominee/' + vm.nominee.public_slug));
           vm.loading = false;
         }, function (err) {
@@ -56,7 +82,7 @@
         '    <div class="card">',
         '      <div class="flex-between">',
         '        <div class="nominee-card-top" style="margin-bottom:0;">',
-        '          <div class="nominee-avatar" style="width:68px;height:68px;font-size:1.4rem;">{{ vm.nominee.public_name | initials }}</div>',
+        '          <img ng-src="{{ vm.nominee.image }}" alt="{{ vm.nominee.public_name }}" style="width:72px;height:72px;border-radius:50%;object-fit:cover;border:3px solid var(--accent-gold);box-shadow:0 4px 10px rgba(0,0,0,0.15);" />',
         '          <div>',
         '            <th-status-badge status="vm.nominee.status"></th-status-badge>',
         '            <h1 style="margin:6px 0 2px;font-size:1.8rem;">{{ vm.nominee.public_name }}</h1>',
@@ -73,14 +99,14 @@
 
         '    <div class="grid-2 mt-3">',
         '      <div class="card">',
-        '        <h3>Approved Audition Demo</h3>',
+        '        <h3>Approved Audition Demo &amp; Performance</h3>',
         '        <div ng-if="vm.nominee.demo && !vm.nominee.demo.is_hidden">',
         '          <h4 style="margin:0 0 8px;">{{ vm.nominee.demo.title }}</h4>',
         '          <p class="muted">{{ vm.nominee.demo.description }}</p>',
-        '          <div ng-if="vm.nominee.demo.media_asset && vm.nominee.demo.media_asset.url" class="mt-2">',
-        '            <video ng-if="vm.nominee.demo.media_asset.mime_type.indexOf(\'video\') === 0" controls style="width:100%;border-radius:8px;" ng-src="{{ vm.nominee.demo.media_asset.url }}"></video>',
-        '            <audio ng-if="vm.nominee.demo.media_asset.mime_type.indexOf(\'audio\') === 0" controls style="width:100%;" ng-src="{{ vm.nominee.demo.media_asset.url }}"></audio>',
-        '            <img ng-if="vm.nominee.demo.media_asset.mime_type.indexOf(\'image\') === 0" style="max-width:100%;border-radius:8px;" ng-src="{{ vm.nominee.demo.media_asset.url }}" alt="Demo preview" />',
+        '          <div class="mt-2">',
+        '            <video ng-if="vm.nominee.demo.media_asset && vm.nominee.demo.media_asset.url && vm.nominee.demo.media_asset.mime_type.indexOf(\'video\') === 0" controls playsinline style="width:100%;border-radius:8px;max-height:360px;background:#000;" ng-src="{{ vm.nominee.demo.media_asset.url }}"></video>',
+        '            <audio ng-if="vm.nominee.demo.media_asset && vm.nominee.demo.media_asset.url && vm.nominee.demo.media_asset.mime_type.indexOf(\'audio\') === 0" controls style="width:100%;" ng-src="{{ vm.nominee.demo.media_asset.url }}"></audio>',
+        '            <video ng-if="!vm.nominee.demo.media_asset" controls playsinline style="width:100%;border-radius:8px;max-height:360px;background:#000;" src="/assets/videos/demo-sample.mp4"></video>',
         '          </div>',
         '          <div ng-if="vm.nominee.demo.external_video_url" class="mt-2">',
         '            <a ng-href="{{ vm.nominee.demo.external_video_url }}" target="_blank" rel="noopener noreferrer" class="btn btn-secondary">&#9654; Watch External Hosted Performance</a>',
@@ -98,16 +124,32 @@
         '        <div ng-if="vm.nominee.published_round_history && vm.nominee.published_round_history.length" class="mt-2">',
         '          <h4>Published Round History</h4>',
         '          <div ng-repeat="h in vm.nominee.published_round_history" class="flex-between" style="padding:6px 0;border-bottom:1px solid var(--border);">',
-        '            <span>{{ h.round_name }}</span>',
-        '            <span><th-status-badge status="h.outcome"></th-status-badge> <strong ng-if="h.final_votes !== null">({{ h.final_votes }} votes)</strong></span>',
+        '            <div><strong>{{ h.round_name }}</strong> &bull; <span class="muted">{{ h.status }}</span></div>',
+        '            <div><span class="nominee-votes-pill">{{ h.final_votes | number }} votes</span></div>',
         '          </div>',
         '        </div>',
-        '        <div class="mt-3" style="border-top:1px solid var(--border);padding-top:12px;">',
-        '          <button type="button" class="btn btn-sm btn-secondary" ng-click="vm.showReportForm = !vm.showReportForm">Report Content Concern</button>',
-        '          <form ng-if="vm.showReportForm" class="mt-2" ng-submit="vm.submitReport()">',
-        '            <div class="form-group"><label class="form-label">Reason</label><select class="form-control" ng-model="vm.report.reason"><option value="">Select reason...</option><option value="Copyright / Rights Infringement">Copyright / Rights Infringement</option><option value="Inappropriate Content">Inappropriate Content</option><option value="Impersonation">Impersonation</option></select></div>',
-        '            <div class="form-group"><label class="form-label">Details</label><textarea class="form-control" ng-model="vm.report.details"></textarea></div>',
-        '            <button type="submit" class="btn btn-sm btn-danger">Submit Report</button>',
+        '        <div class="mt-3">',
+        '          <button type="button" class="btn btn-sm btn-outline-danger" ng-if="!vm.showReportForm" ng-click="vm.showReportForm = true">Report Profile</button>',
+        '          <form ng-if="vm.showReportForm" ng-submit="vm.submitReport()" class="card mt-2" style="background:var(--bg-subtle);">',
+        '            <h4>Report Nominee Profile</h4>',
+        '            <div class="mb-2">',
+        '              <label class="form-label">Reason</label>',
+        '              <select class="form-control" ng-model="vm.report.reason" required>',
+        '                <option value="">Select reason...</option>',
+        '                <option value="COPYRIGHT">Copyright or original demo violation</option>',
+        '                <option value="FRAUD">Impersonation or fraudulent identity</option>',
+        '                <option value="INAPPROPRIATE">Inappropriate or prohibited content</option>',
+        '                <option value="OTHER">Other concern</option>',
+        '              </select>',
+        '            </div>',
+        '            <div class="mb-2">',
+        '              <label class="form-label">Details</label>',
+        '              <textarea class="form-control" rows="3" ng-model="vm.report.details" placeholder="Describe the issue..."></textarea>',
+        '            </div>',
+        '            <div class="inline-actions">',
+        '              <button type="submit" class="btn btn-sm btn-danger">Submit Report</button>',
+        '              <button type="button" class="btn btn-sm btn-secondary" ng-click="vm.showReportForm = false">Cancel</button>',
+        '            </div>',
         '          </form>',
         '        </div>',
         '      </div>',
