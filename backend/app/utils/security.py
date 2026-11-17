@@ -64,7 +64,7 @@ def get_client_ip_hash() -> str | None:
     return hash_ip(ip)
 
 
-def create_access_token(user_id: str, token_version: int = 1) -> str:
+def create_access_token(user_id: str, token_version: int = 1, session_id: str | None = None) -> str:
     now = datetime.now(timezone.utc)
     exp_hours = current_app.config.get("TOKEN_EXPIRE_HOURS", 72)
     payload = {
@@ -73,7 +73,66 @@ def create_access_token(user_id: str, token_version: int = 1) -> str:
         "iat": int(now.timestamp()),
         "exp": int((now + timedelta(hours=exp_hours)).timestamp()),
     }
+    if session_id:
+        payload["sid"] = session_id
     return jwt.encode(payload, current_app.config["SECRET_KEY"], algorithm="HS256")
+
+
+def create_2fa_temp_token(user_id: str) -> str:
+    now = datetime.now(timezone.utc)
+    payload = {
+        "sub": user_id,
+        "purpose": "2fa_pending",
+        "iat": int(now.timestamp()),
+        "exp": int((now + timedelta(minutes=5)).timestamp()),
+    }
+    return jwt.encode(payload, current_app.config["SECRET_KEY"], algorithm="HS256")
+
+
+def decode_2fa_temp_token(token: str) -> str | None:
+    try:
+        data = jwt.decode(token, current_app.config["SECRET_KEY"], algorithms=["HS256"])
+        if data.get("purpose") == "2fa_pending":
+            return data.get("sub")
+    except jwt.PyJWTError:
+        pass
+    return None
+
+
+def parse_device_summary(ua_string: str | None) -> str:
+    if not ua_string:
+        return "Web Browser"
+    ua = ua_string.lower()
+
+    # Detect OS / Device
+    device = "Unknown Device"
+    if "iphone" in ua:
+        device = "iPhone"
+    elif "ipad" in ua:
+        device = "iPad"
+    elif "android" in ua:
+        device = "Android"
+    elif "windows" in ua:
+        device = "Windows"
+    elif "macintosh" in ua or "mac os" in ua:
+        device = "Mac"
+    elif "linux" in ua:
+        device = "Linux"
+
+    # Detect Browser
+    browser = "Browser"
+    if "edg" in ua:
+        browser = "Edge"
+    elif "chrome" in ua and "chromium" not in ua:
+        browser = "Chrome"
+    elif "firefox" in ua:
+        browser = "Firefox"
+    elif "safari" in ua and "chrome" not in ua:
+        browser = "Safari"
+    elif "opera" in ua or "opr" in ua:
+        browser = "Opera"
+
+    return f"{browser} on {device}"
 
 
 def decode_access_token(token: str) -> dict | None:

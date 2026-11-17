@@ -36,6 +36,32 @@
         '      <div>',
         '        <h4>StageLight Talent Hunt</h4>',
         '        <p>Ghana-first talent discovery, auditable public voting, verified Mobile Money &amp; Card payments, and transparent multi-round progression.</p>',
+        '        <div class="footer-social-wrap" ng-if="$ctrl.hasSocials()">',
+        '          <span class="footer-social-title">Follow &amp; Connect</span>',
+        '          <div class="footer-social-links">',
+        '            <a ng-if="$ctrl.socials.facebook_url" ng-href="{{$ctrl.socials.facebook_url}}" target="_blank" rel="noopener noreferrer" class="footer-social-btn social-facebook" title="Facebook" aria-label="Facebook">',
+        '              <th-icon name="facebook" size="16"></th-icon>',
+        '            </a>',
+        '            <a ng-if="$ctrl.socials.instagram_url" ng-href="{{$ctrl.socials.instagram_url}}" target="_blank" rel="noopener noreferrer" class="footer-social-btn social-instagram" title="Instagram" aria-label="Instagram">',
+        '              <th-icon name="instagram" size="16"></th-icon>',
+        '            </a>',
+        '            <a ng-if="$ctrl.socials.twitter_url" ng-href="{{$ctrl.socials.twitter_url}}" target="_blank" rel="noopener noreferrer" class="footer-social-btn social-twitter" title="Twitter / X" aria-label="Twitter / X">',
+        '              <th-icon name="x-twitter" size="16"></th-icon>',
+        '            </a>',
+        '            <a ng-if="$ctrl.socials.youtube_url" ng-href="{{$ctrl.socials.youtube_url}}" target="_blank" rel="noopener noreferrer" class="footer-social-btn social-youtube" title="YouTube" aria-label="YouTube">',
+        '              <th-icon name="youtube" size="16"></th-icon>',
+        '            </a>',
+        '            <a ng-if="$ctrl.socials.tiktok_url" ng-href="{{$ctrl.socials.tiktok_url}}" target="_blank" rel="noopener noreferrer" class="footer-social-btn social-tiktok" title="TikTok" aria-label="TikTok">',
+        '              <th-icon name="tiktok" size="16"></th-icon>',
+        '            </a>',
+        '            <a ng-if="$ctrl.socials.whatsapp_number" ng-href="{{$ctrl.getWhatsAppUrl($ctrl.socials.whatsapp_number)}}" target="_blank" rel="noopener noreferrer" class="footer-social-btn social-whatsapp" title="WhatsApp Support" aria-label="WhatsApp">',
+        '              <th-icon name="whatsapp" size="16"></th-icon>',
+        '            </a>',
+        '            <a ng-if="$ctrl.socials.linkedin_url" ng-href="{{$ctrl.socials.linkedin_url}}" target="_blank" rel="noopener noreferrer" class="footer-social-btn social-linkedin" title="LinkedIn" aria-label="LinkedIn">',
+        '              <th-icon name="linkedin" size="16"></th-icon>',
+        '            </a>',
+        '          </div>',
+        '        </div>',
         '      </div>',
         '      <div>',
         '        <h4>Explore</h4>',
@@ -74,19 +100,63 @@
         '    </div>',
         '    <div class="footer-bottom">',
         '      <span>&copy; 2026 StageLight Ghana. All votes verified against immutable payment ledger.</span>',
+        '      <div class="footer-bottom-socials" ng-if="$ctrl.hasSocials()">',
+        '        <a ng-if="$ctrl.socials.facebook_url" ng-href="{{$ctrl.socials.facebook_url}}" target="_blank" rel="noopener noreferrer" class="footer-bottom-social-link" title="Facebook"><th-icon name="facebook" size="14"></th-icon></a>',
+        '        <a ng-if="$ctrl.socials.instagram_url" ng-href="{{$ctrl.socials.instagram_url}}" target="_blank" rel="noopener noreferrer" class="footer-bottom-social-link" title="Instagram"><th-icon name="instagram" size="14"></th-icon></a>',
+        '        <a ng-if="$ctrl.socials.twitter_url" ng-href="{{$ctrl.socials.twitter_url}}" target="_blank" rel="noopener noreferrer" class="footer-bottom-social-link" title="Twitter / X"><th-icon name="x-twitter" size="14"></th-icon></a>',
+        '        <a ng-if="$ctrl.socials.youtube_url" ng-href="{{$ctrl.socials.youtube_url}}" target="_blank" rel="noopener noreferrer" class="footer-bottom-social-link" title="YouTube"><th-icon name="youtube" size="14"></th-icon></a>',
+        '        <a ng-if="$ctrl.socials.tiktok_url" ng-href="{{$ctrl.socials.tiktok_url}}" target="_blank" rel="noopener noreferrer" class="footer-bottom-social-link" title="TikTok"><th-icon name="tiktok" size="14"></th-icon></a>',
+        '        <a ng-if="$ctrl.socials.whatsapp_number" ng-href="{{$ctrl.getWhatsAppUrl($ctrl.socials.whatsapp_number)}}" target="_blank" rel="noopener noreferrer" class="footer-bottom-social-link" title="WhatsApp"><th-icon name="whatsapp" size="14"></th-icon></a>',
+        '        <a ng-if="$ctrl.socials.linkedin_url" ng-href="{{$ctrl.socials.linkedin_url}}" target="_blank" rel="noopener noreferrer" class="footer-bottom-social-link" title="LinkedIn"><th-icon name="linkedin" size="14"></th-icon></a>',
+        '      </div>',
         '      <span>Accra, Ghana &bull; Currency: GHS</span>',
         '    </div>',
         '  </div>',
         '</footer>'
       ].join(''),
-      controller: ['$location', '$rootScope', function ($location, $rootScope) {
+      controller: ['$location', '$rootScope', 'ApiService', function ($location, $rootScope, ApiService) {
         var vm = this;
+        vm.socials = {};
+
         function update() {
           var p = $location.path() || '/';
           vm.isAdmin = p === '/admin' || p.indexOf('/admin/') === 0;
         }
+
+        function loadSocials() {
+          ApiService.get('/public/info').then(function (res) {
+            var data = (res && res.data) || {};
+            vm.socials = data.social_links || {};
+          }).catch(function () {
+            // fallback
+          });
+        }
+
+        vm.hasSocials = function () {
+          if (!vm.socials) return false;
+          return !!(
+            vm.socials.facebook_url ||
+            vm.socials.instagram_url ||
+            vm.socials.twitter_url ||
+            vm.socials.youtube_url ||
+            vm.socials.tiktok_url ||
+            vm.socials.whatsapp_number ||
+            vm.socials.linkedin_url
+          );
+        };
+
+        vm.getWhatsAppUrl = function (val) {
+          if (!val) return '';
+          if (val.indexOf('http://') === 0 || val.indexOf('https://') === 0) return val;
+          var digits = val.replace(/\D/g, '');
+          return 'https://wa.me/' + digits;
+        };
+
         update();
+        loadSocials();
+
         $rootScope.$on('$routeChangeSuccess', update);
+        $rootScope.$on('platformInfoChanged', loadSocials);
       }]
     });
 })();

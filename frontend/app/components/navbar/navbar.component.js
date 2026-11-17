@@ -91,7 +91,7 @@
         '        <div class="admin-profile-pill" ng-if="$ctrl.auth.isAuthenticated()" title="{{ $ctrl.auth.state.user.full_name }} ({{ $ctrl.primaryRole() }})">',
         '          <div class="admin-profile-avatar">{{ $ctrl.auth.state.user.full_name | initials }}</div>',
         '          <span class="admin-profile-name">{{ $ctrl.auth.state.user.full_name.split(" ")[0] }}</span>',
-        '          <button type="button" class="admin-logout-btn" ng-click="$ctrl.logout()" title="Sign Out">',
+        '          <button type="button" class="admin-logout-btn" ng-click="$ctrl.promptLogout()" title="Sign Out">',
         '            <th-icon name="log-out" size="13"></th-icon>',
         '          </button>',
         '        </div>',
@@ -159,10 +159,80 @@
         '      <div class="nav-actions">',
         '        <a ng-if="!$ctrl.auth.isAuthenticated()" href="/portal/login" class="btn btn-sm btn-outline-light"><th-icon name="log-in" size="15"></th-icon><span>Sign In</span></a>',
         '        <a ng-if="!$ctrl.auth.isAuthenticated()" href="/portal/register" class="btn btn-sm btn-gold"><th-icon name="mic" size="15"></th-icon><span>Submit Talent</span></a>',
-        '        <a ng-if="$ctrl.auth.isAuthenticated() && $ctrl.perms.isNominee()" href="/portal/voting" class="btn btn-sm btn-gold"><th-icon name="vote" size="15"></th-icon><span>My Votes</span></a>',
-        '        <a ng-if="$ctrl.auth.isAuthenticated()" href="/portal/dashboard" class="btn btn-sm btn-outline-light" ng-class="{\'nav-btn-active\': $ctrl.startsWith(\'/portal\')}"><th-icon name="user" size="15"></th-icon><span>Portal ({{ $ctrl.auth.state.user.full_name.split(" ")[0] }})</span></a>',
-        '        <a ng-if="$ctrl.auth.isAuthenticated() && $ctrl.perms.canAccessAdmin()" href="/admin" class="btn btn-sm btn-primary" ng-class="{\'nav-btn-active-admin\': $ctrl.startsWith(\'/admin\')}"><th-icon name="shield" size="15"></th-icon><span>Admin</span></a>',
-        '        <button ng-if="$ctrl.auth.isAuthenticated()" type="button" class="btn btn-sm btn-outline-light" ng-click="$ctrl.logout()"><th-icon name="log-out" size="15"></th-icon><span>Sign Out</span></button>',
+        '        <div class="nav-profile-dropdown" ng-if="$ctrl.auth.isAuthenticated()" ng-class="{\'is-open\': $ctrl.profileDropdownOpen}">',
+        '          <button type="button" class="nav-profile-trigger" ng-click="$ctrl.toggleProfileDropdown($event)" aria-haspopup="true" aria-expanded="{{ $ctrl.profileDropdownOpen }}" title="{{ $ctrl.auth.state.user.full_name }} ({{ $ctrl.primaryRole() }})">',
+        '            <div class="nav-profile-avatar">{{ $ctrl.auth.state.user.full_name | initials }}</div>',
+        '            <div class="nav-profile-info">',
+        '              <span class="nav-profile-name">{{ $ctrl.auth.state.user.full_name.split(" ")[0] }}</span>',
+        '              <span class="nav-profile-badge" ng-if="$ctrl.perms.isNominee()">Nominee</span>',
+        '              <span class="nav-profile-badge badge-admin" ng-if="!$ctrl.perms.isNominee() && $ctrl.perms.canAccessAdmin()">Admin</span>',
+        '            </div>',
+        '            <th-icon name="chevron-down" size="13" class="nav-chevron"></th-icon>',
+        '          </button>',
+        '          <div class="nav-profile-menu" role="menu" ng-click="$event.stopPropagation()">',
+        '            <div class="nav-profile-header">',
+        '              <div class="nav-profile-header-avatar">{{ $ctrl.auth.state.user.full_name | initials }}</div>',
+        '              <div class="nav-profile-header-text">',
+        '                <div class="nav-profile-header-name">{{ $ctrl.auth.state.user.full_name }}</div>',
+        '                <div class="nav-profile-header-meta">',
+        '                  <span class="nav-profile-role-tag">{{ $ctrl.primaryRole() }}</span>',
+        '                  <span class="nav-profile-email" title="{{ $ctrl.auth.state.user.email || $ctrl.auth.state.user.phone }}">{{ $ctrl.auth.state.user.email || $ctrl.auth.state.user.phone }}</span>',
+        '                </div>',
+        '              </div>',
+        '            </div>',
+        '            <div class="nav-dropdown-divider"></div>',
+        '            <a href="/portal/dashboard" class="nav-dropdown-item" ng-class="{active: $ctrl.isActive(\'/portal/dashboard\')}" ng-click="$ctrl.profileDropdownOpen = false" role="menuitem">',
+        '              <div class="nav-dd-icon"><th-icon name="dashboard" size="16"></th-icon></div>',
+        '              <div class="nav-dd-text">',
+        '                <span class="nav-dd-title">Portal Overview</span>',
+        '                <span class="nav-dd-desc">Contestant dashboard &amp; overview</span>',
+        '              </div>',
+        '            </a>',
+        '            <a ng-if="$ctrl.perms.isNominee()" href="/portal/voting" class="nav-dropdown-item nav-item-gold" ng-class="{active: $ctrl.isActive(\'/portal/voting\')}" ng-click="$ctrl.profileDropdownOpen = false" role="menuitem">',
+        '              <div class="nav-dd-icon icon-gold"><th-icon name="vote" size="16"></th-icon></div>',
+        '              <div class="nav-dd-text">',
+        '                <span class="nav-dd-title">My Nominee Votes &amp; QR</span>',
+        '                <span class="nav-dd-desc">Live votes ledger, packages &amp; QR scan</span>',
+        '              </div>',
+        '            </a>',
+        '            <a href="/portal/submissions" class="nav-dropdown-item" ng-class="{active: $ctrl.isActive(\'/portal/submissions\')}" ng-click="$ctrl.profileDropdownOpen = false" role="menuitem">',
+        '              <div class="nav-dd-icon"><th-icon name="folder" size="16"></th-icon></div>',
+        '              <div class="nav-dd-text">',
+        '                <span class="nav-dd-title">My Applications</span>',
+        '                <span class="nav-dd-desc">Talent demo submissions &amp; feedback</span>',
+        '              </div>',
+        '            </a>',
+        '            <a href="/portal/profile" class="nav-dropdown-item" ng-class="{active: $ctrl.isActive(\'/portal/profile\')}" ng-click="$ctrl.profileDropdownOpen = false" role="menuitem">',
+        '              <div class="nav-dd-icon"><th-icon name="user" size="16"></th-icon></div>',
+        '              <div class="nav-dd-text">',
+        '                <span class="nav-dd-title">My Profile</span>',
+        '                <span class="nav-dd-desc">Biography, photo &amp; personal details</span>',
+        '              </div>',
+        '            </a>',
+        '            <a href="/portal/security" class="nav-dropdown-item" ng-class="{active: $ctrl.isActive(\'/portal/security\')}" ng-click="$ctrl.profileDropdownOpen = false" role="menuitem">',
+        '              <div class="nav-dd-icon"><th-icon name="lock" size="16"></th-icon></div>',
+        '              <div class="nav-dd-text">',
+        '                <span class="nav-dd-title">Verification &amp; Security</span>',
+        '                <span class="nav-dd-desc">Two-factor auth, sessions &amp; devices</span>',
+        '              </div>',
+        '            </a>',
+        '            <a ng-if="$ctrl.perms.canAccessAdmin()" href="/admin" class="nav-dropdown-item nav-item-admin" ng-class="{active: $ctrl.startsWith(\'/admin\')}" ng-click="$ctrl.profileDropdownOpen = false" role="menuitem">',
+        '              <div class="nav-dd-icon icon-admin"><th-icon name="shield" size="16"></th-icon></div>',
+        '              <div class="nav-dd-text">',
+        '                <span class="nav-dd-title">Admin Console</span>',
+        '                <span class="nav-dd-desc">Platform operations, audit &amp; settings</span>',
+        '              </div>',
+        '            </a>',
+        '            <div class="nav-dropdown-divider"></div>',
+        '            <button type="button" class="nav-dropdown-item nav-item-logout" ng-click="$ctrl.promptLogout()" role="menuitem">',
+        '              <div class="nav-dd-icon icon-logout"><th-icon name="log-out" size="16"></th-icon></div>',
+        '              <div class="nav-dd-text">',
+        '                <span class="nav-dd-title">Sign Out</span>',
+        '                <span class="nav-dd-desc">End your active session securely</span>',
+        '              </div>',
+        '            </button>',
+        '          </div>',
+        '        </div>',
         '      </div>',
         '      <button type="button" class="mobile-menu-btn" ng-click="$ctrl.menuOpen = !$ctrl.menuOpen" aria-expanded="{{ $ctrl.menuOpen }}">',
         '        <th-icon name="{{ $ctrl.menuOpen ? \'x\' : \'menu\' }}" size="16"></th-icon>',
@@ -185,7 +255,35 @@
         '    <a ng-if="$ctrl.auth.isAuthenticated()" href="/portal/dashboard" ng-click="$ctrl.menuOpen=false"><th-icon name="user" size="17"></th-icon><span>My Portal Dashboard</span></a>',
         '    <a ng-if="$ctrl.auth.isAuthenticated() && $ctrl.perms.isNominee()" href="/portal/voting" ng-click="$ctrl.menuOpen=false"><th-icon name="vote" size="17"></th-icon><span>Nominee Voting Dashboard</span></a>',
         '    <a ng-if="$ctrl.auth.isAuthenticated() && $ctrl.perms.canAccessAdmin()" href="/admin" ng-click="$ctrl.menuOpen=false"><th-icon name="shield" size="17"></th-icon><span>Admin Console</span></a>',
-        '    <button ng-if="$ctrl.auth.isAuthenticated()" type="button" class="btn btn-sm btn-outline-light mt-1" ng-click="$ctrl.logout()"><th-icon name="log-out" size="15"></th-icon><span>Sign Out</span></button>',
+        '    <button ng-if="$ctrl.auth.isAuthenticated()" type="button" class="btn btn-sm btn-outline-light mt-1" ng-click="$ctrl.promptLogout()"><th-icon name="log-out" size="15"></th-icon><span>Sign Out</span></button>',
+        '  </div>',
+        '  <!-- Sign Out Confirmation Modal -->',
+        '  <div ng-if="$ctrl.showLogoutModal">',
+        '    <div class="modal-backdrop" ng-click="$ctrl.showLogoutModal = false"></div>',
+        '    <div class="modal-dialog" style="max-width:420px;padding:0;" role="dialog" aria-modal="true">',
+        '      <div class="modal-header">',
+        '        <h3 style="margin:0;display:flex;align-items:center;gap:8px;font-size:1.15rem;">',
+        '          <th-icon name="log-out" size="18" style="color:#e11d48;"></th-icon>',
+        '          <span>Sign Out</span>',
+        '        </h3>',
+        '        <button type="button" class="btn-close" ng-click="$ctrl.showLogoutModal = false" aria-label="Close" style="background:none;border:none;cursor:pointer;font-size:1.3rem;color:var(--text-muted);">&times;</button>',
+        '      </div>',
+        '      <div class="modal-body" style="padding:20px;">',
+        '        <p style="margin:0 0 8px;font-size:0.95rem;color:var(--text-main);">',
+        '          Are you sure you want to sign out, <strong>{{ $ctrl.auth.state.user.full_name }}</strong>?',
+        '        </p>',
+        '        <p class="muted" style="margin:0;font-size:0.85rem;">',
+        '          Your current session will be securely ended.',
+        '        </p>',
+        '      </div>',
+        '      <div class="modal-footer" style="padding:12px 20px;display:flex;justify-content:flex-end;gap:10px;">',
+        '        <button type="button" class="btn btn-secondary" ng-click="$ctrl.showLogoutModal = false">Cancel</button>',
+        '        <button type="button" class="btn btn-danger" ng-click="$ctrl.confirmLogout()">',
+        '          <th-icon name="log-out" size="14"></th-icon>',
+        '          <span>Sign Out</span>',
+        '        </button>',
+        '      </div>',
+        '    </div>',
         '  </div>',
         '</header>'
       ].join(''),
@@ -196,12 +294,26 @@
           vm.perms = PermissionsService;
           vm.menuOpen = false;
           vm.dropdownOpen = false;
+          vm.profileDropdownOpen = false;
 
           vm.toggleDropdown = function ($event) {
             if ($event) {
               $event.stopPropagation();
             }
             vm.dropdownOpen = !vm.dropdownOpen;
+            if (vm.dropdownOpen) {
+              vm.profileDropdownOpen = false;
+            }
+          };
+
+          vm.toggleProfileDropdown = function ($event) {
+            if ($event) {
+              $event.stopPropagation();
+            }
+            vm.profileDropdownOpen = !vm.profileDropdownOpen;
+            if (vm.profileDropdownOpen) {
+              vm.dropdownOpen = false;
+            }
           };
 
           vm.isDropdownActive = function () {
@@ -288,14 +400,18 @@
 
           vm.primaryRole = function () {
             var u = vm.auth.state && vm.auth.state.user;
-            if (!u || !u.roles || !u.roles.length) return 'ADMIN';
+            if (!u || !u.roles || !u.roles.length) return 'Contestant';
             var names = {
               'SUPER_ADMIN': 'Super Admin',
-              'COMPETITION_MANAGER': 'Manager',
-              'REVIEWER': 'Judge',
-              'FINANCE_OFFICER': 'Finance',
-              'MODERATOR': 'Moderator'
+              'COMPETITION_MANAGER': 'Comp Manager',
+              'REVIEWER': 'Reviewer / Judge',
+              'FINANCE_OFFICER': 'Finance Officer',
+              'MODERATOR': 'Moderator',
+              'NOMINEE': 'Nominee Contestant',
+              'APPLICANT': 'Applicant'
             };
+            if (u.roles.indexOf('SUPER_ADMIN') !== -1) return 'Super Admin';
+            if (u.roles.indexOf('NOMINEE') !== -1) return 'Nominee Contestant';
             return names[u.roles[0]] || u.roles[0];
           };
 
@@ -311,11 +427,15 @@
           }
 
           function onGlobalClick(e) {
-            if (vm.dropdownOpen) {
-              var el = $element[0] && $element[0].querySelector('.nav-dropdown');
-              if (el && !el.contains(e.target)) {
+            if (vm.dropdownOpen || vm.profileDropdownOpen) {
+              var ddEl = $element[0] && $element[0].querySelector('.nav-dropdown');
+              var profEl = $element[0] && $element[0].querySelector('.nav-profile-dropdown');
+              var inDd = ddEl && ddEl.contains(e.target);
+              var inProf = profEl && profEl.contains(e.target);
+              if (!inDd && !inProf) {
                 $scope.$evalAsync(function () {
                   vm.dropdownOpen = false;
+                  vm.profileDropdownOpen = false;
                 });
               }
             }
@@ -343,6 +463,7 @@
           $scope.$on('$routeChangeSuccess', function () {
             vm.menuOpen = false;
             vm.dropdownOpen = false;
+            vm.profileDropdownOpen = false;
             vm.searchActive = false;
             vm.searchQuery = '';
             updateAdminState();
@@ -352,13 +473,22 @@
           vm.isActive = function (p) { return $location.path() === p; };
           vm.startsWith = function (prefix) { return $location.path().indexOf(prefix) === 0; };
 
-          vm.logout = function () {
+          vm.showLogoutModal = false;
+          vm.promptLogout = function () {
+            vm.profileDropdownOpen = false;
+            vm.dropdownOpen = false;
             vm.menuOpen = false;
-            AuthService.logout().then(function () {
+            vm.showLogoutModal = true;
+          };
+
+          vm.confirmLogout = function () {
+            vm.showLogoutModal = false;
+            AuthService.logout('/portal/login').then(function () {
               ToastService.info('You have been signed out.');
-              $location.path('/');
             });
           };
+
+          vm.logout = vm.promptLogout;
         }
       ]
     });

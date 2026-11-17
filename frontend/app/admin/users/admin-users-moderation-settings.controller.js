@@ -133,14 +133,15 @@
         };
       }
     ])
-    .controller('AdminSettingsController', ['ApiService', 'ToastService', 'AdminFilterUtils', 'AdService', '$timeout', '$scope',
-      function (ApiService, ToastService, AdminFilterUtils, AdService, $timeout, $scope) {
+    .controller('AdminSettingsController', ['ApiService', 'ToastService', 'AdminFilterUtils', 'AdService', '$timeout', '$scope', '$rootScope',
+      function (ApiService, ToastService, AdminFilterUtils, AdService, $timeout, $scope, $rootScope) {
         var vm = this;
 
         // --- TAB STATE ---
         vm.activeTab = 'basic_info';
         vm.tabs = [
           { id: 'basic_info', label: 'Basic Info', icon: 'settings' },
+          { id: 'social_links', label: 'Social Media', icon: 'share-2' },
           { id: 'payment_gateway', label: 'Payment Gateway', icon: 'credit-card' },
           { id: 'sms_config', label: 'SMS Config', icon: 'mail' },
           { id: 'email_config', label: 'Email Config', icon: 'mail' },
@@ -170,6 +171,18 @@
         vm.logoAsset = null;
         vm.faviconAsset = null;
         vm.savingBasic = false;
+
+        // --- SOCIAL MEDIA LINKS ---
+        vm.socialLinks = {
+          facebook_url: 'https://facebook.com/stagelightgh',
+          instagram_url: 'https://instagram.com/stagelightgh',
+          twitter_url: 'https://x.com/stagelightgh',
+          youtube_url: 'https://youtube.com/@stagelightgh',
+          tiktok_url: 'https://tiktok.com/@stagelightgh',
+          whatsapp_number: '+233240000000',
+          linkedin_url: ''
+        };
+        vm.savingSocial = false;
 
         // --- PAYMENT GATEWAY CONFIG ---
         vm.paymentConfig = {
@@ -285,6 +298,7 @@
           ApiService.get('/admin/settings').then(function (res) {
             var data = res.data || {};
             if (data.basic_info) angular.extend(vm.basicInfo, data.basic_info);
+            if (data.social_links) angular.extend(vm.socialLinks, data.social_links);
             if (data.payment_gateway) {
               angular.extend(vm.paymentConfig, data.payment_gateway);
               if (data.payment_gateway.paystack) {
@@ -377,6 +391,26 @@
           }, function (err) {
             vm.savingBasic = false;
             ToastService.error(err.message || 'Failed to save basic info.');
+          });
+        };
+
+        // --- SOCIAL MEDIA ACTIONS ---
+        vm.getWhatsAppUrl = function (val) {
+          if (!val) return '';
+          if (val.indexOf('http://') === 0 || val.indexOf('https://') === 0) return val;
+          var digits = val.replace(/\D/g, '');
+          return 'https://wa.me/' + digits;
+        };
+
+        vm.saveSocialLinks = function () {
+          vm.savingSocial = true;
+          ApiService.patch('/admin/settings', { social_links: vm.socialLinks }).then(function () {
+            vm.savingSocial = false;
+            ToastService.success('Social media links saved successfully.');
+            $rootScope.$broadcast('platformInfoChanged');
+          }, function (err) {
+            vm.savingSocial = false;
+            ToastService.error(err.message || 'Failed to save social media links.');
           });
         };
 
@@ -914,6 +948,110 @@
         '      <div class="inline-actions">',
         '        <button type="button" class="btn btn-primary" ng-click="vm.saveBasicInfo()" ng-disabled="vm.savingBasic">',
         '          <th-icon name="check" size="15"></th-icon><span>{{ vm.savingBasic ? "Saving..." : "Save Basic Info" }}</span>',
+        '        </button>',
+        '      </div>',
+        '    </div>',
+        '',
+        '    <!-- TAB: SOCIAL MEDIA LINKS -->',
+        '    <div ng-if="vm.activeTab === \'social_links\'" class="mt-3">',
+        '      <div class="flex-between mb-2" style="flex-wrap:wrap;gap:10px;">',
+        '        <div>',
+        '          <h1 style="margin:0;font-size:1.5rem;display:flex;align-items:center;gap:8px;">',
+        '            <th-icon name="share-2" size="22"></th-icon>',
+        '            <span>Official Social Media &amp; Community Channels</span>',
+        '          </h1>',
+        '          <p class="muted mb-0" style="margin:4px 0 0;font-size:0.88rem;">Configure public social profiles, handles, and direct WhatsApp links displayed on the website footer and landing pages.</p>',
+        '        </div>',
+        '      </div>',
+        '',
+        '      <div class="card mb-3" style="background:var(--bg-subtle);padding:20px;border-radius:12px;">',
+        '        <div class="grid-2" style="gap:20px;">',
+        '          <div>',
+        '            <label class="form-label" style="display:flex;align-items:center;gap:8px;font-weight:600;">',
+        '              <span class="social-badge-chip facebook"><th-icon name="facebook" size="14"></th-icon></span> Facebook Page URL',
+        '            </label>',
+        '            <input type="url" class="form-control" ng-model="vm.socialLinks.facebook_url" placeholder="https://facebook.com/yourpagename" />',
+        '            <span class="field-hint" style="font-size:0.8rem;color:var(--text-muted);display:block;margin-top:4px;">Direct link to your official Facebook page. Leave blank to hide.</span>',
+        '          </div>',
+        '          <div>',
+        '            <label class="form-label" style="display:flex;align-items:center;gap:8px;font-weight:600;">',
+        '              <span class="social-badge-chip instagram"><th-icon name="instagram" size="14"></th-icon></span> Instagram Profile URL',
+        '            </label>',
+        '            <input type="url" class="form-control" ng-model="vm.socialLinks.instagram_url" placeholder="https://instagram.com/yourhandle" />',
+        '            <span class="field-hint" style="font-size:0.8rem;color:var(--text-muted);display:block;margin-top:4px;">Direct link to your official Instagram page or account.</span>',
+        '          </div>',
+        '          <div>',
+        '            <label class="form-label" style="display:flex;align-items:center;gap:8px;font-weight:600;">',
+        '              <span class="social-badge-chip twitter"><th-icon name="x-twitter" size="14"></th-icon></span> X (Twitter) Profile URL',
+        '            </label>',
+        '            <input type="url" class="form-control" ng-model="vm.socialLinks.twitter_url" placeholder="https://x.com/yourhandle" />',
+        '            <span class="field-hint" style="font-size:0.8rem;color:var(--text-muted);display:block;margin-top:4px;">Profile link on X (Twitter).</span>',
+        '          </div>',
+        '          <div>',
+        '            <label class="form-label" style="display:flex;align-items:center;gap:8px;font-weight:600;">',
+        '              <span class="social-badge-chip youtube"><th-icon name="youtube" size="14"></th-icon></span> YouTube Channel URL',
+        '            </label>',
+        '            <input type="url" class="form-control" ng-model="vm.socialLinks.youtube_url" placeholder="https://youtube.com/@yourchannel" />',
+        '            <span class="field-hint" style="font-size:0.8rem;color:var(--text-muted);display:block;margin-top:4px;">Official YouTube channel link for talent performances and live streams.</span>',
+        '          </div>',
+        '          <div>',
+        '            <label class="form-label" style="display:flex;align-items:center;gap:8px;font-weight:600;">',
+        '              <span class="social-badge-chip tiktok"><th-icon name="tiktok" size="14"></th-icon></span> TikTok Profile URL',
+        '            </label>',
+        '            <input type="url" class="form-control" ng-model="vm.socialLinks.tiktok_url" placeholder="https://tiktok.com/@yourhandle" />',
+        '            <span class="field-hint" style="font-size:0.8rem;color:var(--text-muted);display:block;margin-top:4px;">Official TikTok handle for short videos and voter challenges.</span>',
+        '          </div>',
+        '          <div>',
+        '            <label class="form-label" style="display:flex;align-items:center;gap:8px;font-weight:600;">',
+        '              <span class="social-badge-chip whatsapp"><th-icon name="whatsapp" size="14"></th-icon></span> WhatsApp Support Number or Link',
+        '            </label>',
+        '            <input type="text" class="form-control" ng-model="vm.socialLinks.whatsapp_number" placeholder="+233240000000 or https://wa.me/233240000000" />',
+        '            <span class="field-hint" style="font-size:0.8rem;color:var(--text-muted);display:block;margin-top:4px;">Phone number with country code (e.g. +233240000000) or direct wa.me link.</span>',
+        '          </div>',
+        '          <div>',
+        '            <label class="form-label" style="display:flex;align-items:center;gap:8px;font-weight:600;">',
+        '              <span class="social-badge-chip linkedin"><th-icon name="linkedin" size="14"></th-icon></span> LinkedIn Page URL',
+        '            </label>',
+        '            <input type="url" class="form-control" ng-model="vm.socialLinks.linkedin_url" placeholder="https://linkedin.com/company/yourcompany" />',
+        '            <span class="field-hint" style="font-size:0.8rem;color:var(--text-muted);display:block;margin-top:4px;">Corporate or organizer LinkedIn profile.</span>',
+        '          </div>',
+        '        </div>',
+        '      </div>',
+        '',
+        '      <!-- Live Preview Card -->',
+        '      <div class="card mb-3" style="background:#0b1120;color:#f8fafc;padding:20px;border-radius:12px;border:1px solid #1e293b;">',
+        '        <div style="font-size:0.85rem;color:#94a3b8;font-weight:700;text-transform:uppercase;letter-spacing:0.05em;margin-bottom:12px;">',
+        '          Live Footer Social Icons Preview',
+        '        </div>',
+        '        <div class="footer-social-links" style="display:flex;gap:12px;flex-wrap:wrap;align-items:center;">',
+        '          <a ng-if="vm.socialLinks.facebook_url" ng-href="{{vm.socialLinks.facebook_url}}" target="_blank" rel="noopener noreferrer" class="footer-social-btn social-facebook" title="Facebook">',
+        '            <th-icon name="facebook" size="18"></th-icon>',
+        '          </a>',
+        '          <a ng-if="vm.socialLinks.instagram_url" ng-href="{{vm.socialLinks.instagram_url}}" target="_blank" rel="noopener noreferrer" class="footer-social-btn social-instagram" title="Instagram">',
+        '            <th-icon name="instagram" size="18"></th-icon>',
+        '          </a>',
+        '          <a ng-if="vm.socialLinks.twitter_url" ng-href="{{vm.socialLinks.twitter_url}}" target="_blank" rel="noopener noreferrer" class="footer-social-btn social-twitter" title="Twitter / X">',
+        '            <th-icon name="x-twitter" size="18"></th-icon>',
+        '          </a>',
+        '          <a ng-if="vm.socialLinks.youtube_url" ng-href="{{vm.socialLinks.youtube_url}}" target="_blank" rel="noopener noreferrer" class="footer-social-btn social-youtube" title="YouTube">',
+        '            <th-icon name="youtube" size="18"></th-icon>',
+        '          </a>',
+        '          <a ng-if="vm.socialLinks.tiktok_url" ng-href="{{vm.socialLinks.tiktok_url}}" target="_blank" rel="noopener noreferrer" class="footer-social-btn social-tiktok" title="TikTok">',
+        '            <th-icon name="tiktok" size="18"></th-icon>',
+        '          </a>',
+        '          <a ng-if="vm.socialLinks.whatsapp_number" ng-href="{{vm.getWhatsAppUrl(vm.socialLinks.whatsapp_number)}}" target="_blank" rel="noopener noreferrer" class="footer-social-btn social-whatsapp" title="WhatsApp">',
+        '            <th-icon name="whatsapp" size="18"></th-icon>',
+        '          </a>',
+        '          <a ng-if="vm.socialLinks.linkedin_url" ng-href="{{vm.socialLinks.linkedin_url}}" target="_blank" rel="noopener noreferrer" class="footer-social-btn social-linkedin" title="LinkedIn">',
+        '            <th-icon name="linkedin" size="18"></th-icon>',
+        '          </a>',
+        '        </div>',
+        '        <div class="muted mt-2" style="font-size:0.8rem;color:#64748b;">Only channels with a valid link or number entered above will appear on the public site footer.</div>',
+        '      </div>',
+        '',
+        '      <div class="inline-actions">',
+        '        <button type="button" class="btn btn-primary" ng-click="vm.saveSocialLinks()" ng-disabled="vm.savingSocial">',
+        '          <th-icon name="check" size="15"></th-icon><span>{{ vm.savingSocial ? "Saving..." : "Save Social Media Links" }}</span>',
         '        </button>',
         '      </div>',
         '    </div>',

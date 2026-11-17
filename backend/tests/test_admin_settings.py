@@ -34,6 +34,9 @@ def test_get_settings_contains_defaults(client):
     assert "backup_config" in data
     assert "announcements" in data
     assert "ad_settings" in data
+    assert "social_links" in data
+    assert "facebook_url" in data["social_links"]
+    assert "whatsapp_number" in data["social_links"]
     # Check payment_gateway structure
     pg = data["payment_gateway"]
     assert "active_provider" in pg
@@ -72,6 +75,11 @@ def test_patch_settings_and_readback(client):
             "sender_id": "SLGhana",
             "test_phone": "+233241234567",
         },
+        "social_links": {
+            "facebook_url": "https://facebook.com/custompage",
+            "tiktok_url": "https://tiktok.com/@customtalent",
+            "whatsapp_number": "+233201234567",
+        },
     }
     res = client.patch("/api/v1/admin/settings", json=payload, headers=headers)
     assert res.status_code == 200
@@ -80,13 +88,18 @@ def test_patch_settings_and_readback(client):
     assert data["payment_gateway"]["active_provider"] == "paystack"
     assert data["payment_gateway"]["min_amount_ghs"] == 2.5
     assert data["sms_config"]["provider"] == "hubtel"
+    assert data["social_links"]["facebook_url"] == "https://facebook.com/custompage"
+    assert data["social_links"]["whatsapp_number"] == "+233201234567"
 
-    # Verify public/info reflects updated basic_info
+    # Verify public/info reflects updated basic_info and social_links
     pub_res = client.get("/api/v1/public/info")
     assert pub_res.status_code == 200
     pub_data = pub_res.get_json()["data"]
     assert pub_data["platform_name"] == "StageLight Ghana 2026"
     assert pub_data["contact_email"] == "hello@stagelight.gh"
+    assert pub_data["social_links"]["facebook_url"] == "https://facebook.com/custompage"
+    assert pub_data["social_links"]["tiktok_url"] == "https://tiktok.com/@customtalent"
+    assert pub_data["social_links"]["whatsapp_number"] == "+233201234567"
 
 
 def test_upload_logo_and_favicon(client):

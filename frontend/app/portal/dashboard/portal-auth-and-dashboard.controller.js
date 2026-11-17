@@ -38,14 +38,17 @@
         '      </div>',
         '    </div>',
         '    <div class="side-nav-footer-actions">',
-        '      <a href="/" class="side-nav-footer-btn" title="View Public Website">',
-        '        <th-icon name="home" size="14"></th-icon><span>Public Site</span>',
+        '      <a href="/" class="side-nav-footer-btn btn-home" title="View Public Website" aria-label="Public Website">',
+        '        <th-icon name="home" size="17"></th-icon>',
         '      </a>',
-        '      <a ng-if="$ctrl.perms.canAccessAdmin()" href="/admin" class="side-nav-footer-btn" title="Open Admin Console">',
-        '        <th-icon name="shield" size="14"></th-icon><span>Admin</span>',
+        '      <a ng-if="$ctrl.perms.canAccessAdmin()" href="/admin" class="side-nav-footer-btn btn-admin" title="Open Admin Console" aria-label="Admin Console">',
+        '        <th-icon name="shield" size="17"></th-icon>',
         '      </a>',
-        '      <button type="button" class="side-nav-footer-btn btn-signout" ng-click="$ctrl.logout()" title="Sign Out">',
-        '        <th-icon name="log-out" size="14"></th-icon><span>Sign Out</span>',
+        '      <a href="/portal/security" class="side-nav-footer-btn btn-security" title="Verification & Security" aria-label="Verification & Security">',
+        '        <th-icon name="lock" size="17"></th-icon>',
+        '      </a>',
+        '      <button type="button" class="side-nav-footer-btn btn-signout" ng-click="$ctrl.promptLogout()" title="Sign Out" aria-label="Sign Out">',
+        '        <th-icon name="log-out" size="17"></th-icon>',
         '      </button>',
         '    </div>',
         '    <div class="side-nav-version-tag">',
@@ -54,15 +57,49 @@
         '      <span class="status-online">&#9679; Verified</span>',
         '    </div>',
         '  </div>',
+        '  <!-- Sign Out Confirmation Modal -->',
+        '  <div ng-if="$ctrl.showLogoutModal">',
+        '    <div class="modal-backdrop" ng-click="$ctrl.showLogoutModal = false"></div>',
+        '    <div class="modal-dialog" style="max-width:420px;padding:0;" role="dialog" aria-modal="true">',
+        '      <div class="modal-header">',
+        '        <h3 style="margin:0;display:flex;align-items:center;gap:8px;font-size:1.15rem;">',
+        '          <th-icon name="log-out" size="18" style="color:#e11d48;"></th-icon>',
+        '          <span>Sign Out</span>',
+        '        </h3>',
+        '        <button type="button" class="btn-close" ng-click="$ctrl.showLogoutModal = false" aria-label="Close" style="background:none;border:none;cursor:pointer;font-size:1.3rem;color:var(--text-muted);">&times;</button>',
+        '      </div>',
+        '      <div class="modal-body" style="padding:20px;">',
+        '        <p style="margin:0 0 8px;font-size:0.95rem;color:var(--text-main);">',
+        '          Are you sure you want to sign out, <strong>{{ $ctrl.user.full_name }}</strong>?',
+        '        </p>',
+        '        <p class="muted" style="margin:0;font-size:0.85rem;">',
+        '          Your current contestant portal session will be securely ended.',
+        '        </p>',
+        '      </div>',
+        '      <div class="modal-footer" style="padding:12px 20px;display:flex;justify-content:flex-end;gap:10px;">',
+        '        <button type="button" class="btn btn-secondary" ng-click="$ctrl.showLogoutModal = false">Cancel</button>',
+        '        <button type="button" class="btn btn-danger" ng-click="$ctrl.confirmLogout()">',
+        '          <th-icon name="log-out" size="14"></th-icon>',
+        '          <span>Sign Out</span>',
+        '        </button>',
+        '      </div>',
+        '    </div>',
+        '  </div>',
         '</aside>'
       ].join(''),
-      controller: ['$location', '$element', '$timeout', 'AuthService', 'PermissionsService',
-        function ($location, $element, $timeout, AuthService, PermissionsService) {
+      controller: ['$scope', '$location', '$element', '$timeout', 'AuthService', 'PermissionsService',
+        function ($scope, $location, $element, $timeout, AuthService, PermissionsService) {
           var vm = this;
           vm.auth = AuthService;
           vm.perms = PermissionsService;
           vm.drawerOpen = false;
           vm.user = AuthService.state.user;
+
+          $scope.$watch(function () {
+            return AuthService.state.user;
+          }, function (u) {
+            vm.user = u;
+          });
 
           vm.is = function (p) { return $location.path() === p; };
 
@@ -98,9 +135,15 @@
             return names[r] || r;
           };
 
-          vm.logout = function () {
-            AuthService.logout();
+          vm.showLogoutModal = false;
+          vm.promptLogout = function () {
+            vm.showLogoutModal = true;
           };
+          vm.confirmLogout = function () {
+            vm.showLogoutModal = false;
+            AuthService.logout('/portal/login');
+          };
+          vm.logout = vm.promptLogout;
 
           vm.$postLink = function () {
             var scrollEl = $element[0] && ($element[0].querySelector('.side-nav-body') || $element[0].querySelector('aside.side-nav'));
@@ -123,8 +166,19 @@
         var vm = this;
         vm.identifier = '';
         vm.password = '';
+        vm.twoFactorCode = '';
+        vm.tempToken = null;
+        vm.step = 1;
         vm.loading = false;
         vm.error = null;
+        vm.reasonNotice = null;
+
+        var reason = $location.search().reason;
+        if (reason === 'inactivity') {
+          vm.reasonNotice = 'You have been automatically signed out due to inactivity to protect your account. Please sign in again.';
+        } else if (reason === 'revoked') {
+          vm.reasonNotice = 'Your session was terminated from another device or signed out. Please sign in again.';
+        }
 
         vm.demoAccounts = [
           { label: 'Nominee (Ama Gold)', email: 'ama@stagelight.gh', pass: 'Nominee@2026!' },
@@ -137,31 +191,66 @@
         ];
 
         vm.fillDemo = function (acc) {
+          vm.step = 1;
           vm.identifier = acc.email;
           vm.password = acc.pass;
+          vm.error = null;
         };
+
+        function onLoginSuccess(user) {
+          var name = (user && user.full_name) ? user.full_name : 'User';
+          ToastService.success('Welcome back, ' + name + '!');
+          var nextUrl = $location.search().next;
+          var roles = (user && user.roles) ? user.roles : [];
+          var isSuperAdmin = roles.indexOf('SUPER_ADMIN') !== -1;
+          var isAdminRole = isSuperAdmin || PermissionsService.canAccessAdmin();
+
+          if (nextUrl && nextUrl !== '/portal/login' && nextUrl !== '/portal/register') {
+            $location.path(nextUrl).search({});
+          } else if (isAdminRole) {
+            $location.path('/admin').search({});
+          } else if (PermissionsService.isNominee()) {
+            $location.path('/portal/voting').search({});
+          } else {
+            $location.path('/portal/dashboard').search({});
+          }
+        }
 
         vm.submit = function () {
           vm.loading = true;
           vm.error = null;
           AuthService.login(vm.identifier, vm.password).then(function (data) {
             vm.loading = false;
-            ToastService.success('Welcome back, ' + data.user.full_name + '!');
-            var nextUrl = $location.search().next;
-            if (nextUrl) {
-              $location.search({});
-              $location.path(nextUrl);
-            } else if (PermissionsService.canAccessAdmin()) {
-              $location.path('/admin');
-            } else if (PermissionsService.isNominee()) {
-              $location.path('/portal/voting');
-            } else {
-              $location.path('/portal/dashboard');
+            if (data.requires_2fa) {
+              vm.step = 2;
+              vm.tempToken = data.two_factor_temp_token;
+              vm.twoFactorCode = '';
+              return;
             }
+            onLoginSuccess(data.user);
           }, function (err) {
             vm.loading = false;
             vm.error = err.message || 'Sign in failed.';
           });
+        };
+
+        vm.submit2fa = function () {
+          vm.loading = true;
+          vm.error = null;
+          AuthService.verify2fa(vm.tempToken, vm.twoFactorCode).then(function (data) {
+            vm.loading = false;
+            onLoginSuccess(data.user);
+          }, function (err) {
+            vm.loading = false;
+            vm.error = err.message || 'Verification failed. Please check your code or use a backup code.';
+          });
+        };
+
+        vm.backToStep1 = function () {
+          vm.step = 1;
+          vm.tempToken = null;
+          vm.twoFactorCode = '';
+          vm.error = null;
         };
       }
     ])
@@ -238,22 +327,57 @@
       $templateCache.put('portal/login.html', [
         '<div class="container mt-3 mb-3" style="max-width:520px;">',
         '  <div class="card">',
-        '    <h1 style="margin:0 0 6px;font-size:1.6rem;">Sign In to StageLight</h1>',
-        '    <p class="muted">Access your Applicant Portal, Nominee Voting Dashboard, or Admin Console.</p>',
-        '    <div ng-if="vm.error" class="alert alert-danger">{{ vm.error }}</div>',
-        '    <form ng-submit="vm.submit()">',
-        '      <div class="form-group"><label class="form-label">Email or Phone Number</label><input type="text" class="form-control" ng-model="vm.identifier" required placeholder="ama@stagelight.gh or +233..." /></div>',
-        '      <div class="form-group"><label class="form-label">Password</label><input type="password" class="form-control" ng-model="vm.password" required /></div>',
-        '      <button type="submit" class="btn btn-lg btn-primary btn-block" ng-disabled="vm.loading">{{ vm.loading ? "Signing in..." : "Sign In" }}</button>',
-        '    </form>',
-        '    <div class="flex-between mt-2" style="font-size:0.9rem;">',
-        '      <a href="/portal/register">Create an account</a>',
-        '      <a href="/portal/forgot-password">Forgot password?</a>',
+        '    <div ng-if="vm.reasonNotice" class="alert alert-warning mb-2" style="font-size:0.92rem;display:flex;align-items:center;gap:8px;">',
+        '      <th-icon name="shield" size="18"></th-icon>',
+        '      <span>{{ vm.reasonNotice }}</span>',
         '    </div>',
-        '    <hr style="border:none;border-top:1px solid var(--border);margin:18px 0;" />',
-        '    <div style="font-size:0.82rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;">Quick Demo Role Accounts (Click to Autofill)</div>',
-        '    <div class="demo-pill-grid">',
-        '      <button type="button" class="demo-pill" ng-repeat="d in vm.demoAccounts" ng-click="vm.fillDemo(d)">{{ d.label }}</button>',
+        '    <!-- Step 1: Credentials Form -->',
+        '    <div ng-if="vm.step === 1">',
+        '      <h1 style="margin:0 0 6px;font-size:1.6rem;">Sign In to StageLight</h1>',
+        '      <p class="muted">Access your Applicant Portal, Nominee Voting Dashboard, or Admin Console.</p>',
+        '      <div ng-if="vm.error" class="alert alert-danger">{{ vm.error }}</div>',
+        '      <form ng-submit="vm.submit()">',
+        '        <div class="form-group"><label class="form-label">Email, Phone Number or Username</label><input type="text" class="form-control" ng-model="vm.identifier" required placeholder="admin@stagelight.gh, superadmin, ama@..." /></div>',
+        '        <div class="form-group"><label class="form-label">Password</label><input type="password" class="form-control" ng-model="vm.password" required /></div>',
+        '        <button type="submit" class="btn btn-lg btn-primary btn-block" ng-disabled="vm.loading">{{ vm.loading ? "Signing in..." : "Sign In" }}</button>',
+        '      </form>',
+        '      <div class="flex-between mt-2" style="font-size:0.9rem;">',
+        '        <a href="/portal/register">Create an account</a>',
+        '        <a href="/portal/forgot-password">Forgot password?</a>',
+        '      </div>',
+        '      <hr style="border:none;border-top:1px solid var(--border);margin:18px 0;" />',
+        '      <div style="font-size:0.82rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;">Quick Demo Role Accounts (Click to Autofill)</div>',
+        '      <div class="demo-pill-grid">',
+        '        <button type="button" class="demo-pill" ng-repeat="d in vm.demoAccounts" ng-click="vm.fillDemo(d)">{{ d.label }}</button>',
+        '      </div>',
+        '    </div>',
+        '    <!-- Step 2: Two-Factor Verification Challenge -->',
+        '    <div ng-if="vm.step === 2">',
+        '      <div style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">',
+        '        <div style="background:var(--primary-subtle, #e0e7ff);color:var(--primary, #4338ca);width:44px;height:44px;border-radius:50%;display:flex;align-items:center;justify-content:center;font-size:1.3rem;">',
+        '          <th-icon name="shield" size="22"></th-icon>',
+        '        </div>',
+        '        <div>',
+        '          <h2 style="margin:0;font-size:1.4rem;">Two-Factor Authentication</h2>',
+        '          <span class="muted" style="font-size:0.88rem;">Enhanced Account Security</span>',
+        '        </div>',
+        '      </div>',
+        '      <p class="muted" style="font-size:0.92rem;margin-bottom:14px;">',
+        '        Please enter the 6-digit verification code from your authenticator app (Google Authenticator, Authy), or one of your 8-character backup recovery codes.',
+        '      </p>',
+        '      <div ng-if="vm.error" class="alert alert-danger">{{ vm.error }}</div>',
+        '      <form ng-submit="vm.submit2fa()">',
+        '        <div class="form-group">',
+        '          <label class="form-label">Authenticator or Backup Code</label>',
+        '          <input type="text" class="form-control" ng-model="vm.twoFactorCode" required placeholder="e.g. 123456 or ABCD-EFGH" autofocus style="font-size:1.25rem;letter-spacing:2px;text-align:center;font-family:monospace;padding:10px;" />',
+        '        </div>',
+        '        <button type="submit" class="btn btn-lg btn-primary btn-block" ng-disabled="vm.loading || !vm.twoFactorCode">',
+        '          {{ vm.loading ? "Verifying..." : "Verify & Sign In" }}',
+        '        </button>',
+        '        <button type="button" class="btn btn-secondary btn-block mt-2" ng-click="vm.backToStep1()">',
+        '          Back to Username &amp; Password',
+        '        </button>',
+        '      </form>',
         '    </div>',
         '  </div>',
         '</div>'

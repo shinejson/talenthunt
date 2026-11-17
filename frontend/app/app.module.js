@@ -84,6 +84,8 @@
     })
     .run(['$rootScope', '$location', 'AuthService', 'PermissionsService', 'ToastService',
       function ($rootScope, $location, AuthService, PermissionsService, ToastService) {
+        $rootScope.auth = AuthService;
+        $rootScope.perms = PermissionsService;
         $rootScope.toasts = ToastService.list;
         $rootScope.dismissToast = ToastService.dismiss;
 

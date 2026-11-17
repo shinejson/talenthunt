@@ -17,7 +17,7 @@ from app.models.partnership import (
     SponsorPartner,
 )
 from app.models.financial import PAYMENT_METHODS, PAYOUT_STATUSES, PAYOUT_TYPES, Payout
-from app.models.user import ROLE_DEFINITIONS, Role, User, UserRole
+from app.models.user import ROLE_DEFINITIONS, Role, User, UserRole, UserSession
 from app.models.voting import Order, Payment, VoteLedger, WebhookEvent
 
 __all__ = [
@@ -29,6 +29,7 @@ __all__ = [
     "Role",
     "UserRole",
     "User",
+    "UserSession",
     "COMPETITION_STATUSES",
     "ROUND_STATUSES",
     "Competition",

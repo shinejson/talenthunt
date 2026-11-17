@@ -142,6 +142,18 @@ def public_info():
     binfo = info_setting.value_json if info_setting and isinstance(info_setting.value_json, dict) else {}
     platform_name = binfo.get("platform_name") or current_app.config.get("PLATFORM_NAME", "StageLight")
 
+    social_setting = PlatformSetting.query.filter_by(key="social_links").first()
+    default_socials = {
+        "facebook_url": "https://facebook.com/stagelightgh",
+        "instagram_url": "https://instagram.com/stagelightgh",
+        "twitter_url": "https://x.com/stagelightgh",
+        "youtube_url": "https://youtube.com/@stagelightgh",
+        "tiktok_url": "https://tiktok.com/@stagelightgh",
+        "whatsapp_number": "+233240000000",
+        "linkedin_url": "",
+    }
+    social_links = {**default_socials, **(social_setting.value_json or {})} if social_setting and isinstance(social_setting.value_json, dict) else default_socials
+
     comp = Competition.query.filter(Competition.status != "DRAFT").order_by(Competition.created_at.desc()).first()
     return api_success(
         {
@@ -152,6 +164,7 @@ def public_info():
             "contact_email": binfo.get("contact_email") or "support@stagelight.com.gh",
             "contact_phone": binfo.get("contact_phone") or "+233 24 000 0000",
             "basic_info": binfo,
+            "social_links": social_links,
             "incident_banner": get_incident_banner(),
             "faqs": DEFAULT_FAQS,
             "announcements": (ann_setting.value_json or {}).get("items", []) if ann_setting else [],

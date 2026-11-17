@@ -1,4 +1,4 @@
-from flask import Blueprint, current_app, request
+from flask import Blueprint, current_app, g, request
 
 from app.extensions import db, limiter
 from app.policies.rbac import compute_user_permissions, get_current_user, login_required
@@ -7,11 +7,21 @@ from app.services.audit_service import log_audit
 from app.services.auth_service import (
     change_password,
     complete_password_reset,
+    confirm_2fa,
+    disable_2fa,
+    list_user_sessions,
     login_user,
     logout_current_user,
+    ping_session,
+    regenerate_backup_codes,
     register_user,
     resend_verification_code,
+    revoke_all_other_sessions,
+    revoke_user_session,
+    setup_2fa,
     start_password_reset,
+    update_session_timeout,
+    verify_2fa_login,
     verify_user_contact,
 )
 from app.utils.responses import api_success
@@ -36,10 +46,18 @@ def register():
 
 
 @auth_bp.post("/login")
-@limiter.limit("15 per minute")
+@limiter.limit("60 per minute")
 def login():
     payload = request.get_json(silent=True) or {}
-    user, token = login_user(payload)
+    user, token, requires_2fa, temp_token = login_user(payload)
+    if requires_2fa:
+        return api_success(
+            {
+                "requires_2fa": True,
+                "two_factor_temp_token": temp_token,
+                "user_id": user.id,
+            }
+        )
     return api_success(
         {
             "user": user.to_dict(include_private=True),
@@ -49,10 +67,106 @@ def login():
     )
 
 
+@auth_bp.post("/2fa/verify")
+@limiter.limit("15 per minute")
+def verify_two_factor_login():
+    payload = request.get_json(silent=True) or {}
+    temp_token = payload.get("two_factor_temp_token") or ""
+    code = payload.get("code") or payload.get("backup_code") or ""
+    user, token = verify_2fa_login(temp_token, code)
+    return api_success(
+        {
+            "user": user.to_dict(include_private=True),
+            "permissions": compute_user_permissions(user),
+            "token": token,
+        }
+    )
+
+
+@auth_bp.post("/2fa/setup")
+@login_required
+def initiate_2fa_setup():
+    user = get_current_user()
+    data = setup_2fa(user)
+    return api_success(data)
+
+
+@auth_bp.post("/2fa/confirm")
+@login_required
+def confirm_two_factor():
+    user = get_current_user()
+    payload = request.get_json(silent=True) or {}
+    code = payload.get("code") or ""
+    data = confirm_2fa(user, code)
+    return api_success(data)
+
+
+@auth_bp.post("/2fa/disable")
+@login_required
+def disable_two_factor():
+    user = get_current_user()
+    payload = request.get_json(silent=True) or {}
+    disable_2fa(user, password=payload.get("password"), code=payload.get("code"))
+    return api_success({"disabled": True, "message": "Two-factor authentication disabled."})
+
+
+@auth_bp.post("/2fa/backup-codes")
+@login_required
+def get_new_backup_codes():
+    user = get_current_user()
+    payload = request.get_json(silent=True) or {}
+    codes = regenerate_backup_codes(user, password=payload.get("password"), code=payload.get("code"))
+    return api_success({"backup_codes": codes, "message": "New backup codes generated."})
+
+
+@auth_bp.get("/sessions")
+@login_required
+def get_active_sessions():
+    user = get_current_user()
+    cur_sid = getattr(g, "current_session_id", None)
+    sessions = list_user_sessions(user, cur_sid)
+    return api_success({"sessions": sessions, "current_session_id": cur_sid})
+
+
+@auth_bp.delete("/sessions/<session_id>")
+@login_required
+def terminate_session(session_id: str):
+    user = get_current_user()
+    revoked = revoke_user_session(user, session_id)
+    return api_success({"revoked": revoked})
+
+
+@auth_bp.post("/sessions/logout-others")
+@login_required
+def logout_other_sessions():
+    user = get_current_user()
+    cur_sid = getattr(g, "current_session_id", None)
+    count = revoke_all_other_sessions(user, cur_sid)
+    return api_success({"revoked_count": count, "message": f"Successfully signed out {count} other session(s)."})
+
+
+@auth_bp.post("/session/ping")
+@login_required
+def session_ping():
+    user = get_current_user()
+    cur_sid = getattr(g, "current_session_id", None)
+    info = ping_session(user, cur_sid)
+    return api_success(info)
+
+
+@auth_bp.post("/session-timeout")
+@login_required
+def set_session_timeout():
+    user = get_current_user()
+    payload = request.get_json(silent=True) or {}
+    mins = update_session_timeout(user, payload.get("timeout_minutes", 30))
+    return api_success({"session_timeout_minutes": mins})
+
+
 @auth_bp.post("/logout")
 def logout():
     user = get_current_user()
-    logout_current_user(user)
+    logout_current_user(user, getattr(g, "current_session_id", None))
     return api_success({"logged_out": True})
 
 

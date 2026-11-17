@@ -184,6 +184,8 @@ def create_app(config_object=None) -> Flask:
     with flask_app.app_context():
         from app import models as _models  # noqa: F401
         db.create_all()
+        from app.models.user import ensure_auth_schema
+        ensure_auth_schema()
         from app.services.auth_service import ensure_roles_exist
         ensure_roles_exist()
         db.session.commit()

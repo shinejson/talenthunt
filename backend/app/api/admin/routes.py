@@ -2134,6 +2134,15 @@ def admin_get_settings():
             "storage_path": "/app/backend/uploads/backups",
         },
         "ad_settings": get_ad_settings(),
+        "social_links": {
+            "facebook_url": "https://facebook.com/stagelightgh",
+            "instagram_url": "https://instagram.com/stagelightgh",
+            "twitter_url": "https://x.com/stagelightgh",
+            "youtube_url": "https://youtube.com/@stagelightgh",
+            "tiktok_url": "https://tiktok.com/@stagelightgh",
+            "whatsapp_number": "+233240000000",
+            "linkedin_url": "",
+        },
         "announcements": {"items": []},
         "voting_control": {"global_voting_paused": False, "incident_message": ""},
     }

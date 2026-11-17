@@ -20,10 +20,20 @@
         responseError: function (rejection) {
           if (rejection.status === 401 && rejection.config && rejection.config.url &&
               rejection.config.url.indexOf('/api/v1/auth/login') === -1 &&
+              rejection.config.url.indexOf('/api/v1/auth/2fa/verify') === -1 &&
               rejection.config.url.indexOf('/api/v1/payments/webhooks') === -1) {
             $window.localStorage.removeItem(TOKEN_KEY);
             var AuthService = $injector.get('AuthService');
             AuthService.clearLocalState();
+            var $location = $injector.get('$location');
+            var errCode = rejection.data && rejection.data.error ? rejection.data.error.code : '';
+            var reason = 'unauthorized';
+            if (errCode === 'SESSION_EXPIRED') {
+              reason = 'inactivity';
+            } else if (errCode === 'SESSION_REVOKED') {
+              reason = 'revoked';
+            }
+            $location.path('/portal/login').search({ reason: reason });
           }
           return $q.reject(rejection);
         }

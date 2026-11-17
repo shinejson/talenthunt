@@ -80,14 +80,17 @@
         '      </div>',
         '    </div>',
         '    <div class="side-nav-footer-actions">',
-        '      <a href="/" class="side-nav-footer-btn" title="View Public Website">',
-        '        <th-icon name="home" size="14"></th-icon><span>Public Site</span>',
+        '      <a href="/" class="side-nav-footer-btn btn-home" title="View Public Website" aria-label="Public Website">',
+        '        <th-icon name="home" size="17"></th-icon>',
         '      </a>',
-        '      <a href="/portal/dashboard" class="side-nav-footer-btn" title="Go to Contestant Portal">',
-        '        <th-icon name="user" size="14"></th-icon><span>My Portal</span>',
+        '      <a href="/portal/dashboard" class="side-nav-footer-btn btn-portal" title="Go to Contestant Portal" aria-label="My Portal">',
+        '        <th-icon name="user" size="17"></th-icon>',
         '      </a>',
-        '      <button type="button" class="side-nav-footer-btn btn-signout" ng-click="$ctrl.logout()" title="Sign Out">',
-        '        <th-icon name="log-out" size="14"></th-icon><span>Sign Out</span>',
+        '      <a ng-if="$ctrl.perms.canManageCompetition()" href="/admin/settings" class="side-nav-footer-btn btn-settings" title="Platform Settings" aria-label="Platform Settings">',
+        '        <th-icon name="settings" size="17"></th-icon>',
+        '      </a>',
+        '      <button type="button" class="side-nav-footer-btn btn-signout" ng-click="$ctrl.promptLogout()" title="Sign Out" aria-label="Sign Out">',
+        '        <th-icon name="log-out" size="17"></th-icon>',
         '      </button>',
         '    </div>',
         '    <div class="side-nav-version-tag">',
@@ -96,15 +99,49 @@
         '      <span class="status-online">&#9679; v1.0 Live</span>',
         '    </div>',
         '  </div>',
+        '  <!-- Sign Out Confirmation Modal -->',
+        '  <div ng-if="$ctrl.showLogoutModal">',
+        '    <div class="modal-backdrop" ng-click="$ctrl.showLogoutModal = false"></div>',
+        '    <div class="modal-dialog" style="max-width:420px;padding:0;" role="dialog" aria-modal="true">',
+        '      <div class="modal-header">',
+        '        <h3 style="margin:0;display:flex;align-items:center;gap:8px;font-size:1.15rem;">',
+        '          <th-icon name="log-out" size="18" style="color:#e11d48;"></th-icon>',
+        '          <span>Sign Out</span>',
+        '        </h3>',
+        '        <button type="button" class="btn-close" ng-click="$ctrl.showLogoutModal = false" aria-label="Close" style="background:none;border:none;cursor:pointer;font-size:1.3rem;color:var(--text-muted);">&times;</button>',
+        '      </div>',
+        '      <div class="modal-body" style="padding:20px;">',
+        '        <p style="margin:0 0 8px;font-size:0.95rem;color:var(--text-main);">',
+        '          Are you sure you want to sign out, <strong>{{ $ctrl.user.full_name }}</strong>?',
+        '        </p>',
+        '        <p class="muted" style="margin:0;font-size:0.85rem;">',
+        '          Your current administrator session will be securely terminated.',
+        '        </p>',
+        '      </div>',
+        '      <div class="modal-footer" style="padding:12px 20px;display:flex;justify-content:flex-end;gap:10px;">',
+        '        <button type="button" class="btn btn-secondary" ng-click="$ctrl.showLogoutModal = false">Cancel</button>',
+        '        <button type="button" class="btn btn-danger" ng-click="$ctrl.confirmLogout()">',
+        '          <th-icon name="log-out" size="14"></th-icon>',
+        '          <span>Sign Out</span>',
+        '        </button>',
+        '      </div>',
+        '    </div>',
+        '  </div>',
         '</aside>'
       ].join(''),
-      controller: ['$location', '$element', '$timeout', 'AuthService', 'PermissionsService',
-        function ($location, $element, $timeout, AuthService, PermissionsService) {
+      controller: ['$scope', '$location', '$element', '$timeout', 'AuthService', 'PermissionsService',
+        function ($scope, $location, $element, $timeout, AuthService, PermissionsService) {
           var vm = this;
           vm.auth = AuthService;
           vm.perms = PermissionsService;
           vm.drawerOpen = false;
           vm.user = AuthService.state.user;
+
+          $scope.$watch(function () {
+            return AuthService.state.user;
+          }, function (u) {
+            vm.user = u;
+          });
 
           vm.is = function (p) { return $location.path() === p; };
 
@@ -133,9 +170,15 @@
             return names[r] || r;
           };
 
-          vm.logout = function () {
-            AuthService.logout();
+          vm.showLogoutModal = false;
+          vm.promptLogout = function () {
+            vm.showLogoutModal = true;
           };
+          vm.confirmLogout = function () {
+            vm.showLogoutModal = false;
+            AuthService.logout('/portal/login');
+          };
+          vm.logout = vm.promptLogout;
 
           vm.$postLink = function () {
             var scrollEl = $element[0] && ($element[0].querySelector('.side-nav-body') || $element[0].querySelector('aside.side-nav'));
