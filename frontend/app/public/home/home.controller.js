@@ -232,6 +232,11 @@
         '    </div>',
         '  </section>',
 
+        '  <!-- SPONSOR & GOOGLE ADS LEADERBOARD BANNER -->',
+        '  <div class="container mt-3 mb-1">',
+        '    <th-ad-banner slot="home_leaderboard" format="leaderboard"></th-ad-banner>',
+        '  </div>',
+
         '  <!-- NEW: LIVE AUDITION DEMOS & VIDEO SHOWCASE -->',
         '  <section class="section" ng-if="vm.videoShowcase.length">',
         '    <div class="container">',
@@ -350,6 +355,11 @@
         '      </div>',
         '    </div>',
         '  </section>',
+
+        '  <!-- IN-FEED BILLBOARD AD BANNER -->',
+        '  <div class="container my-3">',
+        '    <th-ad-banner slot="home_mid" format="billboard"></th-ad-banner>',
+        '  </div>',
 
         '  <!-- LIVE ROUND LEADERBOARD -->',
         '  <section class="section" ng-if="vm.data.leaderboard && vm.data.leaderboard.entries.length">',

@@ -114,8 +114,44 @@
         '        <a href="/competitions" ng-class="{active: $ctrl.startsWith(\'/competitions\')}"><th-icon name="trophy" size="16"></th-icon><span>Competitions</span></a>',
         '        <a href="/nominees" ng-class="{active: $ctrl.startsWith(\'/nominee\')}"><th-icon name="star" size="16"></th-icon><span>Nominees</span></a>',
         '        <a href="/results" ng-class="{active: $ctrl.startsWith(\'/results\')}"><th-icon name="bar-chart" size="16"></th-icon><span>Results</span></a>',
-        '        <a href="/sponsors" ng-class="{active: $ctrl.startsWith(\'/sponsors\')}"><th-icon name="gem" size="16"></th-icon><span>Sponsors</span></a>',
-        '        <a href="/partners" ng-class="{active: $ctrl.startsWith(\'/partners\')}"><th-icon name="handshake" size="16"></th-icon><span>Partners</span></a>',
+        '        <div class="nav-dropdown" ng-class="{\'is-open\': $ctrl.dropdownOpen}">',
+        '          <button type="button" class="nav-dropdown-trigger" ng-class="{active: $ctrl.isDropdownActive()}" ng-click="$ctrl.toggleDropdown($event)" aria-haspopup="true" aria-expanded="{{ $ctrl.dropdownOpen }}" title="Rules, Sponsors &amp; Strategic Partners">',
+        '            <th-icon name="layers" size="16"></th-icon>',
+        '            <span>More</span>',
+        '            <th-icon name="chevron-down" size="13" class="nav-chevron"></th-icon>',
+        '          </button>',
+        '          <div class="nav-dropdown-menu" role="menu" ng-click="$event.stopPropagation()">',
+        '            <a href="/rules" class="nav-dropdown-item" ng-class="{active: $ctrl.isActive(\'/rules\')}" ng-click="$ctrl.dropdownOpen = false" role="menuitem">',
+        '              <div class="nav-dd-icon"><th-icon name="shield" size="16"></th-icon></div>',
+        '              <div class="nav-dd-text">',
+        '                <span class="nav-dd-title">Rules &amp; Prizes</span>',
+        '                <span class="nav-dd-desc">Official guidelines, 1st/2nd/3rd &amp; round prizes</span>',
+        '              </div>',
+        '            </a>',
+        '            <a href="/sponsors" class="nav-dropdown-item" ng-class="{active: $ctrl.startsWith(\'/sponsors\')}" ng-click="$ctrl.dropdownOpen = false" role="menuitem">',
+        '              <div class="nav-dd-icon"><th-icon name="gem" size="16"></th-icon></div>',
+        '              <div class="nav-dd-text">',
+        '                <span class="nav-dd-title">Official Sponsors</span>',
+        '                <span class="nav-dd-desc">Title sponsors, brand tiers &amp; packages</span>',
+        '              </div>',
+        '            </a>',
+        '            <a href="/partners" class="nav-dropdown-item" ng-class="{active: $ctrl.startsWith(\'/partners\')}" ng-click="$ctrl.dropdownOpen = false" role="menuitem">',
+        '              <div class="nav-dd-icon"><th-icon name="handshake" size="16"></th-icon></div>',
+        '              <div class="nav-dd-text">',
+        '                <span class="nav-dd-title">Strategic Partners</span>',
+        '                <span class="nav-dd-desc">Ecosystem, media &amp; venue partners</span>',
+        '              </div>',
+        '            </a>',
+        '            <div class="nav-dropdown-divider"></div>',
+        '            <a href="/how-it-works" class="nav-dropdown-item" ng-class="{active: $ctrl.isActive(\'/how-it-works\')}" ng-click="$ctrl.dropdownOpen = false" role="menuitem">',
+        '              <div class="nav-dd-icon"><th-icon name="compass" size="16"></th-icon></div>',
+        '              <div class="nav-dd-text">',
+        '                <span class="nav-dd-title">How It Works</span>',
+        '                <span class="nav-dd-desc">Contestant entry &amp; verified voting guide</span>',
+        '              </div>',
+        '            </a>',
+        '          </div>',
+        '        </div>',
         '      </nav>',
         '      <div class="nav-actions">',
         '        <a ng-if="!$ctrl.auth.isAuthenticated()" href="/portal/login" class="btn btn-sm btn-outline-light"><th-icon name="log-in" size="15"></th-icon><span>Sign In</span></a>',
@@ -136,6 +172,7 @@
         '    <a href="/competitions" ng-click="$ctrl.menuOpen=false" ng-class="{active: $ctrl.startsWith(\'/competitions\')}"><th-icon name="trophy" size="17"></th-icon><span>Competitions</span></a>',
         '    <a href="/nominees" ng-click="$ctrl.menuOpen=false" ng-class="{active: $ctrl.startsWith(\'/nominee\')}"><th-icon name="star" size="17"></th-icon><span>Nominees &amp; Vote</span></a>',
         '    <a href="/results" ng-click="$ctrl.menuOpen=false" ng-class="{active: $ctrl.startsWith(\'/results\')}"><th-icon name="bar-chart" size="17"></th-icon><span>Published Results</span></a>',
+    '    <a href="/rules" ng-click="$ctrl.menuOpen=false" ng-class="{active: $ctrl.isActive(\'/rules\')}"><th-icon name="shield" size="17"></th-icon><span>Official Rules &amp; Prizes</span></a>',
         '    <a href="/sponsors" ng-click="$ctrl.menuOpen=false" ng-class="{active: $ctrl.startsWith(\'/sponsors\')}"><th-icon name="gem" size="17"></th-icon><span>Official Sponsors</span></a>',
         '    <a href="/partners" ng-click="$ctrl.menuOpen=false" ng-class="{active: $ctrl.startsWith(\'/partners\')}"><th-icon name="handshake" size="17"></th-icon><span>Strategic Partners</span></a>',
         '    <a href="/how-it-works" ng-click="$ctrl.menuOpen=false" ng-class="{active: $ctrl.isActive(\'/how-it-works\')}"><th-icon name="compass" size="17"></th-icon><span>How It Works</span></a>',
@@ -155,6 +192,21 @@
           vm.auth = AuthService;
           vm.perms = PermissionsService;
           vm.menuOpen = false;
+          vm.dropdownOpen = false;
+
+          vm.toggleDropdown = function ($event) {
+            if ($event) {
+              $event.stopPropagation();
+            }
+            vm.dropdownOpen = !vm.dropdownOpen;
+          };
+
+          vm.isDropdownActive = function () {
+            return vm.isActive('/rules') ||
+                   vm.startsWith('/sponsors') ||
+                   vm.startsWith('/partners') ||
+                   vm.isActive('/how-it-works');
+          };
           vm.incident = null;
           vm.isAdmin = false;
           vm.searchQuery = '';
@@ -254,17 +306,30 @@
             }
           }
 
+          function onGlobalClick(e) {
+            if (vm.dropdownOpen) {
+              var el = $element[0] && $element[0].querySelector('.nav-dropdown');
+              if (el && !el.contains(e.target)) {
+                $scope.$evalAsync(function () {
+                  vm.dropdownOpen = false;
+                });
+              }
+            }
+          }
+
           vm.$onInit = function () {
             updateAdminState();
             syncNavbarHeight();
             fetchIncident();
             angular.element($window).on('resize', syncNavbarHeight);
             angular.element($window).on('keydown', onGlobalKeyDown);
+            angular.element($window).on('click', onGlobalClick);
           };
 
           vm.$onDestroy = function () {
             angular.element($window).off('resize', syncNavbarHeight);
             angular.element($window).off('keydown', onGlobalKeyDown);
+            angular.element($window).off('click', onGlobalClick);
           };
 
           $scope.$on('incidentBannerChanged', function () {
@@ -273,6 +338,7 @@
 
           $scope.$on('$routeChangeSuccess', function () {
             vm.menuOpen = false;
+            vm.dropdownOpen = false;
             vm.searchActive = false;
             vm.searchQuery = '';
             updateAdminState();

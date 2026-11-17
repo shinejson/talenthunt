@@ -1,0 +1,100 @@
+version: '3.8'
+
+# ==============================================================================
+# StageLight Ghana Talent Hunt — Production Docker Compose Stack
+# ==============================================================================
+
+services:
+  # 1. Primary Flask Web Application (Gunicorn WSGI)
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: stagelight_web
+    restart: unless-stopped
+    ports:
+      - "5050:5050"
+    environment:
+      - FLASK_ENV=production
+      - PORT=5050
+      - DATABASE_URL=postgresql://stagelight_user:${POSTGRES_PASSWORD:-secure_db_pass_2026}@postgres:5432/stagelight_db
+      - RATELIMIT_STORAGE_URI=redis://redis:6379/0
+      - REDIS_URL=redis://redis:6379/0
+      - SECRET_KEY=${SECRET_KEY:-generate-a-strong-random-secret-key}
+      - PAYMENT_PROVIDER=${PAYMENT_PROVIDER:-paystack}
+      - PAYSTACK_SECRET_KEY=${PAYSTACK_SECRET_KEY:-}
+      - PAYMENT_WEBHOOK_SECRET=${PAYMENT_WEBHOOK_SECRET:-}
+      - FRONTEND_ORIGIN=${FRONTEND_ORIGIN:-https://stagelight.com.gh}
+      - SESSION_COOKIE_SECURE=true
+      - AUTO_SEED_DEMO=false
+    volumes:
+      - media_uploads:/app/backend/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # 2. Background Task Worker (Automatic Payment Reconciliation & Round Closing)
+  worker:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: stagelight_worker
+    restart: unless-stopped
+    command: ["python", "-m", "app.tasks.worker"]
+    environment:
+      - FLASK_ENV=production
+      - DATABASE_URL=postgresql://stagelight_user:${POSTGRES_PASSWORD:-secure_db_pass_2026}@postgres:5432/stagelight_db
+      - RATELIMIT_STORAGE_URI=redis://redis:6379/0
+      - SECRET_KEY=${SECRET_KEY:-generate-a-strong-random-secret-key}
+      - PAYMENT_PROVIDER=${PAYMENT_PROVIDER:-paystack}
+      - PAYSTACK_SECRET_KEY=${PAYSTACK_SECRET_KEY:-}
+      - PAYMENT_WEBHOOK_SECRET=${PAYMENT_WEBHOOK_SECRET:-}
+      - RECONCILIATION_INTERVAL_SECONDS=60
+    volumes:
+      - media_uploads:/app/backend/uploads
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+
+  # 3. Production PostgreSQL Database (ACID & Row-level locking for Voting Integrity)
+  postgres:
+    image: postgres:16-alpine
+    container_name: stagelight_postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: stagelight_user
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-secure_db_pass_2026}
+      POSTGRES_DB: stagelight_db
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U stagelight_user -d stagelight_db"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # 4. Redis In-Memory Store (Multi-Worker Distributed Rate Limiting & Fast Caching)
+  redis:
+    image: redis:7-alpine
+    container_name: stagelight_redis
+    restart: unless-stopped
+    command: redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+    volumes:
+      - redisdata:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+volumes:
+  media_uploads:
+    driver: local
+  pgdata:
+    driver: local
+  redisdata:
+    driver: local

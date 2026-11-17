@@ -71,6 +71,8 @@
       $templateCache.put('public/nominees.html', [
         '<div class="page-header"><div class="container"><h1>Nominee Directory</h1><p>Search verified contestants, watch their demos, and cast paid votes in active rounds.</p></div></div>',
         '<div class="container mb-3">',
+        '  <!-- SPONSOR & GOOGLE ADS LEADERBOARD BANNER -->',
+        '  <th-ad-banner slot="nominees_top" format="leaderboard"></th-ad-banner>',
         '  <form class="card mb-3" ng-submit="vm.load(1)">',
         '    <div class="grid-4">',
         '      <div><label class="form-label">Search Name or City</label><input type="text" class="form-control" ng-model="vm.filters.q" placeholder="e.g. Ama Gold, Accra..." /></div>',

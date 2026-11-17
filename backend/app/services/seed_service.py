@@ -97,15 +97,15 @@ def seed_demo_data_if_empty():
         ends_at=now + timedelta(days=45),
         timezone="Africa/Accra",
         currency="GHS",
-        prize_summary="GHS 100,000 Grand Prize + Studio Recording & Performance Tour",
+        prize_summary="GHS 100,000 Cash + Full 6-Track Studio EP + 4-City National Tour + 24K Gold Champion Trophy + Brand Ambassadorship",
         rules=(
-            "1. All demos must be original performances by the applicant.\n"
-            "2. Votes are priced at GHS 1.00 per vote (with bundle packages available) and are counted ONLY after confirmed payment verification.\n"
-            "3. Elimination uses Top-N progression per round; ties are broken by panel judge score followed by earliest verified qualifying vote timestamp.\n"
-            "4. Refunds or chargebacks generate an auditable reversal entry on the vote ledger.\n"
-            "5. Applicants under 18 require verifiable parent/guardian consent."
+            "1. DEMO & ORIGINALITY: All audition entries must be original performances created and executed by the applicant. Cover acts must credit original creators. Plagiarism or AI-generated deepfakes result in permanent disqualification.\n"
+            "2. PRIZE ARCHITECTURE: 1st Place Champion receives GHS 100,000 Cash + 6-Track Studio EP + National Headline Tour + 24K Gold Trophy + Brand Ambassadorship; 2nd Place receives GHS 40,000 Cash + 2-Track Single + Wardrobe Package; 3rd Place receives GHS 20,000 Cash + 1-Track Single. Round 1 Winner receives GHS 5,000 Bursary + Fiber Kit; Round 2 Winner receives GHS 10,000 Bursary + Residency.\n"
+            "3. PROGRESSION & TIE-BREAKING: Progression follows strict published Top-N rules per round. Ties are broken in order: 1) Panel Judge Blind Score, 2) Earliest verified qualifying vote timestamp on the immutable ledger, 3) Head-to-head panel consensus.\n"
+            "4. VERIFIED VOTING INTEGRITY: Votes are priced at GHS 1.00 per vote and are credited strictly upon cryptographic HMAC-verified webhook confirmation. Mismatched or fraudulent payments produce zero votes. Vote ledger is immutable and append-only.\n"
+            "5. MINOR PROTECTION & GOVERNANCE: Performers aged 15-17 require verifiable Parent/Guardian written consent. Anti-fraud limit of 2,000 votes/day per contact enforced. Zero tolerance for bribery, harassment, or botting."
         ),
-        eligibility="Open to solo acts and duos resident in Ghana aged 15 and above (guardian consent required under 18).",
+        eligibility="Open to solo performers, duets, and groups legally resident in Ghana aged 15 and above across all 16 administrative regions (guardian consent required for applicants aged 15–17).",
         public_leaderboard=True,
         nominee_see_rank=True,
         voting_paused=False,

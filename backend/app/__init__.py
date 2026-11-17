@@ -84,11 +84,20 @@ def create_app(config_object=None) -> Flask:
     @flask_app.get("/api/v1/health")
     @limiter.exempt
     def health_check():
+        db_status = "connected"
+        try:
+            db.session.execute(db.text("SELECT 1"))
+        except Exception as e:
+            db_status = f"unavailable: {str(e)}"
+            return api_error("DATABASE_UNAVAILABLE", "Database connection check failed", 503)
+
         return api_success(
             {
                 "status": "healthy",
+                "database": db_status,
                 "service": flask_app.config.get("PLATFORM_NAME", "StageLight"),
                 "version": "1.0.0",
+                "environment": os.environ.get("FLASK_ENV", "development"),
             }
         )
 

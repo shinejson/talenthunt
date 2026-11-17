@@ -31,6 +31,26 @@ Implementation of the **Talent Hunt Platform PRD & Technical Design (`design.md`
 
 ## Quick Start
 
+### Windows (Quickest)
+Simply double-click or run:
+```cmd
+start_server.bat
+```
+*(To stop the server at any time, run `stop_server.bat`)*
+
+Or manually via PowerShell:
+```powershell
+# 1. Install dependencies (if not already installed)
+.\.venv\Scripts\pip.exe install -r backend\requirements.txt
+
+# 2. Run automated test suite
+.\.venv\Scripts\pytest.exe -v backend\tests
+
+# 3. Start unified server (binds http://localhost:5050)
+.\.venv\Scripts\python.exe backend\wsgi.py
+```
+
+### Linux / macOS
 ```bash
 # 1. Create virtual environment & install dependencies
 python3 -m venv .venv
@@ -39,9 +59,12 @@ python3 -m venv .venv
 # 2. Run automated acceptance & security test suite
 .venv/bin/pytest -v backend/tests
 
-# 3. Start the unified Flask API + AngularJS 1.x server (binds 0.0.0.0:5000)
-PYTHONPATH=backend .venv/bin/python backend/wsgi.py
+# 3. Start the unified Flask API + AngularJS 1.x server (binds 0.0.0.0:5050)
+PORT=5050 PYTHONPATH=backend .venv/bin/python backend/wsgi.py
 ```
+
+> [!NOTE]
+> StageLight is a unified single-server application (Flask serves both the API and the AngularJS SPA). It uses an embedded SQLite database (`backend/talent_hunt.db`) with zero external service dependencies—XAMPP Apache and MySQL are not required.
 
 ### Seeded Demo Accounts (Local / Sandbox Mode)
 

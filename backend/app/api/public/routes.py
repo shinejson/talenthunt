@@ -9,6 +9,8 @@ from app.models.operations import ModerationReport, PlatformSetting, SupportTick
 from app.models.partnership import PARTNER_CATEGORY_LIST, SPONSOR_TIER_LIST, SponsorPartner
 from app.policies.rbac import get_current_user
 from app.schemas import DomainError
+from app.services.ad_service import get_ad_settings, get_partner_adverts
+from app.services.rules_service import get_comprehensive_rules_data
 from app.services.partnership_service import (
     create_partnership_inquiry,
     get_collaboration_tracks,
@@ -114,7 +116,19 @@ def public_home():
             "featured_partners": [p.to_public_dict() for p in featured_partners[:6]],
             "leaderboard": leaderboard,
             "announcements": announcements,
+            "ad_settings": get_ad_settings(),
+            "partner_ads": get_partner_adverts(limit=12),
             "faqs": DEFAULT_FAQS,
+        }
+    )
+
+
+@public_bp.get("/public/ads")
+def get_public_ads():
+    return api_success(
+        {
+            "settings": get_ad_settings(),
+            "partner_ads": get_partner_adverts(limit=15),
         }
     )
 
@@ -131,6 +145,8 @@ def public_info():
             "announcements": (ann_setting.value_json or {}).get("items", []) if ann_setting else [],
             "active_rules": comp.rules if comp else None,
             "active_eligibility": comp.eligibility if comp else None,
+            "active_prize_summary": comp.prize_summary if comp else None,
+            "comprehensive_rules": get_comprehensive_rules_data(),
         }
     )
 

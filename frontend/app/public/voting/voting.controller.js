@@ -199,6 +199,9 @@
         '      </div>',
         '    </div>',
 
+        '    <!-- SPONSOR & GOOGLE ADS BANNER -->',
+        '    <th-ad-banner slot="voting_page" format="leaderboard"></th-ad-banner>',
+
         '    <form class="grid-2" ng-if="vm.ctx.can_vote" ng-submit="vm.startCheckout()">',
         '      <div class="card">',
         '        <h3 style="margin-top:0;">1. Select Vote Package</h3>',

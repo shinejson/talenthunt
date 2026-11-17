@@ -12,6 +12,10 @@ class Config:
         "sqlite:///" + os.path.join(BASE_DIR, "talent_hunt.db"),
     )
     SQLALCHEMY_TRACK_MODIFICATIONS = False
+    SQLALCHEMY_ENGINE_OPTIONS = {
+        "pool_pre_ping": True,
+        "pool_recycle": int(os.environ.get("DB_POOL_RECYCLE", "300")),
+    }
     JSON_SORT_KEYS = False
     MAX_CONTENT_LENGTH = 50 * 1024 * 1024
     UPLOAD_FOLDER = os.environ.get(
@@ -50,6 +54,7 @@ class StagingConfig(Config):
 class ProductionConfig(Config):
     SESSION_COOKIE_SECURE = True
     AUTO_SEED_DEMO = False
+    RATELIMIT_STORAGE_URI = os.environ.get("RATELIMIT_STORAGE_URI", os.environ.get("REDIS_URL", "memory://"))
 
 
 class TestConfig(Config):

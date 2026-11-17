@@ -145,10 +145,43 @@
         vm.newAnn = { title: '', date: '2026-11-16', summary: '' };
         vm.filters = { q: '', sort: 'newest' };
 
+        vm.adSettings = {
+          ads_enabled: true,
+          google_ads_enabled: true,
+          google_ads_client_id: 'ca-pub-6412959828302194',
+          google_ads_slots: {
+            home_leaderboard: '4892019283',
+            home_mid: '7193028491',
+            nominees_top: '1003003003',
+            nominee_profile: '1004004004',
+            voting_page: '1005005005',
+            results_page: '1006006006',
+            sidebar: '9382019482'
+          },
+          partner_ads_enabled: true,
+          partner_ads_rotation_seconds: 6,
+          ad_banner_style: 'hybrid',
+          ad_disclosure_text: 'Sponsored Advertisement'
+        };
+
         ApiService.get('/admin/settings').then(function (res) {
           var ann = (res.data && res.data.announcements && res.data.announcements.items) || [];
           vm.announcements = ann;
+          if (res.data && res.data.ad_settings) {
+            angular.extend(vm.adSettings, res.data.ad_settings);
+            if (res.data.ad_settings.google_ads_slots) {
+              vm.adSettings.google_ads_slots = angular.extend({}, vm.adSettings.google_ads_slots, res.data.ad_settings.google_ads_slots);
+            }
+          }
         });
+
+        vm.saveAdSettings = function () {
+          ApiService.patch('/admin/settings', { ad_settings: vm.adSettings }).then(function () {
+            ToastService.success('Ad and sponsorship banner settings saved.');
+          }, function (err) {
+            ToastService.error(err.message || 'Failed to save ad settings.');
+          });
+        };
 
         vm.activeFilterCount = function () {
           var c = AdminFilterUtils.countActive(vm.filters, ['sort']);
@@ -438,6 +471,96 @@
         '    <div ng-repeat="a in vm.filteredAnnouncements()" style="padding:10px 0;border-bottom:1px solid var(--border);">',
         '      <strong>{{ a.title }}</strong> <span class="muted">({{ a.date }})</span><p class="muted" style="margin:4px 0 0;">{{ a.summary }}</p>',
         '    </div>',
+        '  </div>',
+        '',
+        '  <!-- ADVERTISING & GOOGLE ADS CONFIGURATION -->',
+        '  <div class="card mt-3">',
+        '    <div class="flex-between mb-2">',
+        '      <div>',
+        '        <h2 style="margin:0;font-size:1.35rem;">Advertising &amp; Google Ads Banners</h2>',
+        '        <p class="muted" style="margin:4px 0 0;font-size:0.88rem;">Manage Partner &amp; Supporter ad rotations and Google AdSense units across public pages.</p>',
+        '      </div>',
+        '      <span class="sp-tier-pill sp-tier-pill-sm sp-tier-title">&#9733; Ad Manager Active</span>',
+        '    </div>',
+        '',
+        '    <form ng-submit="vm.saveAdSettings()">',
+        '      <div class="grid-3 mb-3" style="background:var(--bg-subtle);padding:14px;border-radius:var(--radius-sm);border:1px solid var(--border);">',
+        '        <div>',
+        '          <label class="form-label" style="font-weight:700;">Global Ad System</label>',
+        '          <label style="display:flex;align-items:center;gap:8px;font-size:0.92rem;cursor:pointer;">',
+        '            <input type="checkbox" ng-model="vm.adSettings.ads_enabled" /> Enable Ads on Pages',
+        '          </label>',
+        '          <div class="muted" style="font-size:0.78rem;margin-top:4px;">Master switch for all banner units.</div>',
+        '        </div>',
+        '        <div>',
+        '          <label class="form-label" style="font-weight:700;">Partner &amp; Supporter Ads</label>',
+        '          <label style="display:flex;align-items:center;gap:8px;font-size:0.92rem;cursor:pointer;">',
+        '            <input type="checkbox" ng-model="vm.adSettings.partner_ads_enabled" /> Rotate Partner Adverts',
+        '          </label>',
+        '          <div class="muted" style="font-size:0.78rem;margin-top:4px;">Highlights active sponsors &amp; partners.</div>',
+        '        </div>',
+        '        <div>',
+        '          <label class="form-label" style="font-weight:700;">Google Ads (AdSense)</label>',
+        '          <label style="display:flex;align-items:center;gap:8px;font-size:0.92rem;cursor:pointer;">',
+        '            <input type="checkbox" ng-model="vm.adSettings.google_ads_enabled" /> Serve Google Ads',
+        '          </label>',
+        '          <div class="muted" style="font-size:0.78rem;margin-top:4px;">Serves responsive AdSense tags.</div>',
+        '        </div>',
+        '      </div>',
+        '',
+        '      <div class="grid-2 mb-3">',
+        '        <div class="form-group">',
+        '          <label class="form-label">Banner Display Mode</label>',
+        '          <select class="form-control" ng-model="vm.adSettings.ad_banner_style">',
+        '            <option value="hybrid">Hybrid (Tabs / Auto-switch between Partners &amp; Google)</option>',
+        '            <option value="partner_only">Partner &amp; Supporter Ads Only</option>',
+        '            <option value="google_only">Google Ads Only</option>',
+        '          </select>',
+        '        </div>',
+        '        <div class="form-group">',
+        '          <label class="form-label">Partner Slide Rotation Speed (Seconds)</label>',
+        '          <input type="number" class="form-control" ng-model="vm.adSettings.partner_ads_rotation_seconds" min="3" max="60" />',
+        '        </div>',
+        '      </div>',
+        '',
+        '      <h3 style="font-size:1.08rem;margin:18px 0 10px;padding-bottom:6px;border-bottom:1px solid var(--border);">Google AdSense Account &amp; Slot Configuration</h3>',
+        '      <div class="form-group mb-3">',
+        '        <label class="form-label">Google AdSense Publisher Client ID</label>',
+        '        <input type="text" class="form-control" ng-model="vm.adSettings.google_ads_client_id" placeholder="ca-pub-6412959828302194" />',
+        '        <div class="muted" style="font-size:0.8rem;margin-top:4px;">Found in your Google AdSense console under Account &rarr; Settings &rarr; Publisher ID.</div>',
+        '      </div>',
+        '',
+        '      <div class="grid-3 mb-3">',
+        '        <div class="form-group">',
+        '          <label class="form-label">Homepage Leaderboard Slot</label>',
+        '          <input type="text" class="form-control" ng-model="vm.adSettings.google_ads_slots.home_leaderboard" placeholder="4892019283" />',
+        '        </div>',
+        '        <div class="form-group">',
+        '          <label class="form-label">Homepage Mid-Feed Slot</label>',
+        '          <input type="text" class="form-control" ng-model="vm.adSettings.google_ads_slots.home_mid" placeholder="7193028491" />',
+        '        </div>',
+        '        <div class="form-group">',
+        '          <label class="form-label">Nominees Directory Slot</label>',
+        '          <input type="text" class="form-control" ng-model="vm.adSettings.google_ads_slots.nominees_top" placeholder="1003003003" />',
+        '        </div>',
+        '        <div class="form-group">',
+        '          <label class="form-label">Nominee Profile Slot</label>',
+        '          <input type="text" class="form-control" ng-model="vm.adSettings.google_ads_slots.nominee_profile" placeholder="1004004004" />',
+        '        </div>',
+        '        <div class="form-group">',
+        '          <label class="form-label">Voting &amp; Checkout Slot</label>',
+        '          <input type="text" class="form-control" ng-model="vm.adSettings.google_ads_slots.voting_page" placeholder="1005005005" />',
+        '        </div>',
+        '        <div class="form-group">',
+        '          <label class="form-label">Results Page Slot</label>',
+        '          <input type="text" class="form-control" ng-model="vm.adSettings.google_ads_slots.results_page" placeholder="1006006006" />',
+        '        </div>',
+        '      </div>',
+        '',
+        '      <div class="inline-actions">',
+        '        <button type="submit" class="btn btn-primary"><th-icon name="check" size="15"></th-icon><span>Save Advertising Settings</span></button>',
+        '      </div>',
+        '    </form>',
         '  </div>',
         '</div>'
       ].join(''));

@@ -47,6 +47,8 @@
       $templateCache.put('public/results.html', [
         '<div class="page-header"><div class="container"><h1>Official Results &amp; Standings</h1><p>{{ vm.competition ? vm.competition.title : "Published round outcomes and verified vote snapshots" }}</p></div></div>',
         '<div class="container mb-3">',
+        '  <!-- SPONSOR & GOOGLE ADS BANNER -->',
+        '  <th-ad-banner slot="results_page" format="leaderboard"></th-ad-banner>',
         '  <div ng-if="vm.loading" class="loading-box">Loading published results...</div>',
         '  <div ng-if="vm.error" class="alert alert-warning">{{ vm.error }}</div>',
         '  <div ng-if="!vm.loading && !vm.roundsData.length" class="card empty-state">No public results or leaderboards have been enabled for this competition yet.</div>',

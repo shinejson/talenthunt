@@ -97,6 +97,9 @@
         '      </div>',
         '    </div>',
 
+        '    <!-- SPONSOR & GOOGLE ADS BANNER -->',
+        '    <th-ad-banner slot="nominee_profile" format="leaderboard"></th-ad-banner>',
+
         '    <div class="grid-2 mt-3">',
         '      <div class="card">',
         '        <h3>Approved Audition Demo &amp; Performance</h3>',
@@ -127,6 +130,9 @@
         '            <div><strong>{{ h.round_name }}</strong> &bull; <span class="muted">{{ h.status }}</span></div>',
         '            <div><span class="nominee-votes-pill">{{ h.final_votes | number }} votes</span></div>',
         '          </div>',
+        '        </div>',
+        '        <div class="mt-3">',
+        '          <th-ad-banner slot="sidebar" format="sidebar"></th-ad-banner>',
         '        </div>',
         '        <div class="mt-3">',
         '          <button type="button" class="btn btn-sm btn-outline-danger" ng-if="!vm.showReportForm" ng-click="vm.showReportForm = true">Report Profile</button>',
