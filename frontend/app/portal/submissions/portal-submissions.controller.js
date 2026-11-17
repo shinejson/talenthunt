@@ -17,6 +17,7 @@
         vm.competitions = [];
         vm.selectedComp = null;
         vm.uploadedAsset = null;
+        vm.profileImage = null;
         vm.submitting = false;
         vm.form = {
           competition_id: '',
@@ -26,8 +27,13 @@
           description: '',
           biography: '',
           location: '',
+          genre: '',
+          date_of_birth: '',
           external_video_url: '',
           is_minor: false,
+          is_group: false,
+          group_name: '',
+          group_member_count: '',
           guardian_name: '',
           guardian_contact: '',
           guardian_consent: false,
@@ -58,15 +64,42 @@
 
         vm.submit = function () {
           vm.submitting = true;
-          var payload = angular.copy(vm.form);
-          if (vm.uploadedAsset) payload.media_asset_id = vm.uploadedAsset.id;
-          ApiService.post('/applications', payload).then(function (res) {
-            vm.submitting = false;
-            ToastService.success('Application submitted! Ref: ' + res.data.reference_no);
-            $location.path('/portal/submissions/' + res.data.id);
+          // 1. Persist the applicant profile (date of birth + group indication) first.
+          ApiService.patch('/auth/profile', {
+            date_of_birth: vm.form.date_of_birth || null,
+            is_group: !!vm.form.is_group,
+            group_name: vm.form.group_name || null,
+            group_member_count: vm.form.group_member_count ? parseInt(vm.form.group_member_count, 10) || null : null
+          }).then(function () {
+            var payload = {
+              competition_id: vm.form.competition_id,
+              category_id: vm.form.category_id,
+              stage_name: vm.form.stage_name,
+              title: vm.form.title,
+              description: vm.form.description,
+              biography: vm.form.biography,
+              location: vm.form.location,
+              genre: vm.form.genre || null,
+              external_video_url: vm.form.external_video_url,
+              is_minor: !!vm.form.is_minor,
+              guardian_name: vm.form.guardian_name,
+              guardian_contact: vm.form.guardian_contact,
+              guardian_consent: !!vm.form.guardian_consent,
+              consent_accepted: !!vm.form.consent_accepted,
+              rights_declaration: !!vm.form.rights_declaration
+            };
+            if (vm.uploadedAsset) payload.media_asset_id = vm.uploadedAsset.id;
+            ApiService.post('/applications', payload).then(function (res) {
+              vm.submitting = false;
+              ToastService.success('Application submitted! Ref: ' + res.data.reference_no);
+              $location.path('/portal/submissions/' + res.data.id);
+            }, function (err) {
+              vm.submitting = false;
+              ToastService.error(err.message || 'Submission failed.');
+            });
           }, function (err) {
             vm.submitting = false;
-            ToastService.error(err.message || 'Submission failed.');
+            ToastService.error(err.message || 'Profile update failed.');
           });
         };
       }
@@ -159,7 +192,11 @@
         '      <div class="form-group"><label class="form-label">Demo Title *</label><input type="text" class="form-control" ng-model="vm.form.title" required placeholder="e.g. Original Acoustic Highlife Session" /></div>',
         '      <div class="form-group"><label class="form-label">Performance Description * (min 10 characters)</label><textarea class="form-control" ng-model="vm.form.description" required placeholder="Tell the judges about your performance..."></textarea></div>',
         '      <div class="form-group"><label class="form-label">Artist Biography (Optional)</label><textarea class="form-control" ng-model="vm.form.biography" style="min-height:70px;"></textarea></div>',
-
+        '      <div class="grid-2">',
+        '        <div class="form-group"><label class="form-label">Date of Birth</label><input type="date" class="form-control" ng-model="vm.form.date_of_birth" /></div>',
+        '        <div class="form-group"><label class="form-label">Talent Type / Genre</label><input type="text" class="form-control" ng-model="vm.form.genre" placeholder="e.g. Highlife, Afrobeats, Gospel, Dance, Spoken Word" /></div>',
+        '      </div>',
+        '      <div class="form-group"><label class="form-label">Professional Profile Image</label><th-profile-image-field asset="vm.profileImage"></th-profile-image-field></div>',
         '      <div class="form-group"><th-upload-field asset="vm.uploadedAsset"></th-upload-field></div>',
         '      <div class="form-group"><label class="form-label">Or Hosted Video/Audio URL (YouTube, Vimeo, SoundCloud, Audiomack)</label><input type="url" class="form-control" ng-model="vm.form.external_video_url" placeholder="https://www.youtube.com/watch?v=..." /></div>',
 
@@ -170,6 +207,14 @@
         '          <div class="form-group"><label class="form-label">Parent/Guardian Phone/Email *</label><input type="text" class="form-control" ng-model="vm.form.guardian_contact" /></div>',
         '        </div>',
         '        <div class="checkbox-row"><input type="checkbox" id="gConsent" ng-model="vm.form.guardian_consent" /><label for="gConsent">I confirm verifiable parent/guardian permission for participation and demo publication.</label></div>',
+        '      </div>',
+        '      <div class="checkbox-row"><input type="checkbox" id="groupChk" ng-model="vm.form.is_group" /><label for="groupChk">I am applying as a group (band, troupe, ensemble)</label></div>',
+        '      <div class="card mb-2" ng-if="vm.form.is_group" style="background:var(--info-soft);">',
+        '        <div class="grid-2">',
+        '          <div class="form-group"><label class="form-label">Group Name *</label><input type="text" class="form-control" ng-model="vm.form.group_name" placeholder="e.g. The Accra Beats" /></div>',
+        '          <div class="form-group"><label class="form-label">Number of Members *</label><input type="number" class="form-control" ng-model="vm.form.group_member_count" min="1" /></div>',
+        '        </div>',
+        '        <div class="muted" style="font-size:0.9rem;">The group name will be shown on your public nominee profile if you are nominated.</div>',
         '      </div>',
 
         '      <div class="checkbox-row"><input type="checkbox" id="rulesChk" ng-model="vm.form.consent_accepted" required /><label for="rulesChk">I accept the <a href="/rules" target="_blank">Competition Rules</a> and <a href="/privacy" target="_blank">Privacy Notice</a>. *</label></div>',

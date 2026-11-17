@@ -987,3 +987,157 @@ def test_admin_list_endpoints_sort_and_page_for_datatables(app, client):
         resp = client.get(path, headers=mgr, query_string={"sort_by": "status", "sort_dir": "desc", "per_page": 10})
         assert resp.status_code == 200, (path, resp.get_json())
         assert resp.get_json()["meta"]["per_page"] == 10
+
+
+def test_applicant_profile_image_dob_group_and_genre(app, client):
+    """New applicants can provide a professional profile image, date of birth,
+    group indication, and genre when they sign up and submit a demo."""
+    ctx = _setup_competition_and_actors(app, client)
+    comp, cat = ctx["comp"], ctx["cat"]
+
+    # Register a group applicant with date of birth and group details.
+    reg = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "The Accra Beats",
+            "email": "beats@example.com",
+            "phone": "0240000002",
+            "password": "StrongPass123!",
+            "location": "Accra, Ghana",
+            "date_of_birth": "2000-05-20",
+            "is_group": True,
+            "group_name": "The Accra Beats",
+            "group_member_count": 4,
+        },
+    )
+    assert reg.status_code == 201, reg.get_json()
+    reg_data = reg.get_json()["data"]
+    user = reg_data["user"]
+    assert user["date_of_birth"] == "2000-05-20"
+    assert user["is_group"] is True
+    assert user["group_name"] == "The Accra Beats"
+    assert user["group_member_count"] == 4
+    assert user["profile_image"] is None
+    tok = reg_data["token"]
+    headers = _auth_headers(tok)
+
+    # /auth/me carries the same fields.
+    me = client.get("/api/v1/auth/me", headers=headers).get_json()["data"]["user"]
+    assert me["date_of_birth"] == "2000-05-20" and me["is_group"] is True
+
+    # Upload a professional profile image (PNG).
+    from PIL import Image as PilImage
+
+    png_buf = io.BytesIO()
+    PilImage.new("RGB", (16, 16), (200, 100, 50)).save(png_buf, format="PNG")
+    png_buf.seek(0)
+    png = png_buf
+    up = client.post(
+        "/api/v1/auth/profile-image",
+        headers=headers,
+        data={"file": (png, "profile.png")},
+        content_type="multipart/form-data",
+    )
+    assert up.status_code == 201, up.get_json()
+    asset = up.get_json()["data"]["profile_image"]
+    assert asset["mime_type"].startswith("image/")
+    assert asset["url"] is not None
+
+    me = client.get("/api/v1/auth/me", headers=headers).get_json()["data"]["user"]
+    assert me["profile_image"]["id"] == asset["id"]
+
+    # Non-image uploads are rejected.
+    bad = client.post(
+        "/api/v1/auth/profile-image",
+        headers=headers,
+        data={"file": (io.BytesIO(b"MZ\x90\x00not-an-image"), "evil.exe")},
+        content_type="multipart/form-data",
+    )
+    assert bad.status_code == 422
+
+    # Update profile fields.
+    patch = client.patch(
+        "/api/v1/auth/profile",
+        headers=headers,
+        json={"date_of_birth": "1999-01-01", "group_member_count": 5, "bio": "Ghanaian dance group"},
+    )
+    assert patch.status_code == 200, patch.get_json()
+    patched = patch.get_json()["data"]["user"]
+    assert patched["date_of_birth"] == "1999-01-01"
+    assert patched["group_member_count"] == 5
+
+    # Invalid updates are rejected.
+    assert client.patch("/api/v1/auth/profile", headers=headers, json={"date_of_birth": "2030-01-01"}).status_code == 422
+    assert (
+        client.patch("/api/v1/auth/profile", headers=headers, json={"group_name": None}).status_code == 422
+    )  # group without a name
+
+    # Upload a demo and submit an application with genre + group context.
+    media = client.post(
+        "/api/v1/applications/media",
+        headers=headers,
+        data={"file": (io.BytesIO(b"ID3-fake-clean-audio-demo-bytes"), "demo.mp3")},
+        content_type="multipart/form-data",
+    )
+    assert media.status_code == 201
+    media_id = media.get_json()["data"]["id"]
+
+    sub = client.post(
+        "/api/v1/applications",
+        headers=headers,
+        json={
+            "competition_id": comp["id"],
+            "category_id": cat["id"],
+            "stage_name": "The Accra Beats",
+            "title": "Original Highlife Set",
+            "description": "A four-minute original highlife performance for the competition judges.",
+            "biography": "Five-piece dance group from Jamestown, Accra.",
+            "genre": "Highlife",
+            "media_asset_id": media_id,
+            "is_minor": False,
+            "consent_accepted": True,
+            "rights_declaration": True,
+        },
+    )
+    assert sub.status_code == 201, sub.get_json()
+    app_data = sub.get_json()["data"]
+    assert app_data["genre"] == "Highlife"
+
+    det = client.get(f"/api/v1/applications/{app_data['id']}", headers=headers).get_json()["data"]
+    assert det["genre"] == "Highlife"
+
+    # Reviewer reviews, manager nominates -> public nominee profile exposes image + group info.
+    client.post(
+        f"/api/v1/admin/submissions/{app_data['id']}/review",
+        headers=_auth_headers(ctx["rev_token"]),
+        json={"score": 90.0, "recommendation": "NOMINATE", "internal_notes": "Strong group act"},
+    )
+    nom_res = client.post(
+        f"/api/v1/admin/submissions/{app_data['id']}/decision",
+        headers=_auth_headers(ctx["mgr_token"]),
+        json={"decision": "NOMINATE", "round_id": ctx["r1"]["id"], "reason": "Top audition"},
+    )
+    assert nom_res.status_code == 200, nom_res.get_json()
+    nominee = nom_res.get_json()["data"]["nominee"]
+
+    pub = client.get(f"/api/v1/nominees/{nominee['public_slug']}").get_json()["data"]
+    assert pub["is_group"] is True
+    assert pub["group_name"] == "The Accra Beats"
+    assert pub["group_member_count"] == 5
+    assert pub["profile_image"] is not None
+    assert pub["profile_image"]["id"] == asset["id"]
+
+    # A solo applicant without profile fields still works end to end.
+    reg2 = client.post(
+        "/api/v1/auth/register",
+        json={
+            "full_name": "Kobby Solo",
+            "email": "kobby@example.com",
+            "password": "StrongPass123!",
+            "date_of_birth": "1995-11-05",
+            "is_group": False,
+        },
+    )
+    assert reg2.status_code == 201
+    assert reg2.get_json()["data"]["user"]["is_group"] is False
+    assert reg2.get_json()["data"]["user"]["group_name"] is None

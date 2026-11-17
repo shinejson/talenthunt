@@ -7,6 +7,7 @@
         var vm = this;
         vm.perms = PermissionsService;
         var u = AuthService.state.user || {};
+        vm.user = u;
         vm.userForm = { full_name: u.full_name || '', location: u.location || '', bio: u.bio || '' };
         vm.nomineeForm = null;
 
@@ -253,6 +254,10 @@
         '  <th-portal-nav></th-portal-nav>',
         '  <div>',
         '    <div class="card mb-3">',
+        '      <div ng-if="vm.user.profile_image" style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">',
+        '        <img ng-src="{{ vm.user.profile_image.url }}" alt="Profile image" style="width:64px;height:64px;border-radius:50%;object-fit:cover;border:2px solid var(--border);" />',
+        '        <div><strong>Professional Profile Image</strong><div class="muted" style="font-size:0.85rem;">Uploaded on your account.</div></div>',
+        '      </div>',
         '      <h2 style="margin-top:0;">Account Profile</h2>',
         '      <form ng-submit="vm.saveAccount()">',
         '        <div class="grid-2">',

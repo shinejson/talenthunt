@@ -29,6 +29,10 @@ class RegisterSchema(Schema):
     phone = fields.String(load_default=None, allow_none=True, validate=validate.Length(min=7, max=30))
     password = fields.String(required=True, validate=validate.Length(min=8, max=128))
     location = fields.String(load_default=None, allow_none=True, validate=validate.Length(max=150))
+    date_of_birth = fields.Date(load_default=None, allow_none=True)
+    is_group = fields.Boolean(load_default=False)
+    group_name = fields.String(load_default=None, allow_none=True, validate=validate.Length(max=150))
+    group_member_count = fields.Integer(load_default=None, allow_none=True, validate=validate.Range(min=1))
 
     @validates_schema
     def require_email_or_phone(self, data, **kwargs):
@@ -36,6 +40,16 @@ class RegisterSchema(Schema):
         phone = (data.get("phone") or "").strip()
         if not email and not phone:
             raise ValidationError({"email": ["Provide an email address or phone number."]})
+
+    @validates_schema
+    def validate_group_fields(self, data, **kwargs):
+        is_group = bool(data.get("is_group"))
+        group_name = (data.get("group_name") or "").strip() if data.get("group_name") else ""
+        member_count = data.get("group_member_count")
+        if is_group and not group_name:
+            raise ValidationError({"group_name": ["Group name is required when applying as a group."]})
+        if not is_group and (group_name or member_count):
+            raise ValidationError({"is_group": ["Group details are only relevant when applying as a group."]})
 
 
 class LoginSchema(Schema):
@@ -59,6 +73,7 @@ class ApplicationCreateSchema(Schema):
     description = fields.String(required=True, validate=validate.Length(min=10, max=4000))
     biography = fields.String(load_default=None, allow_none=True, validate=validate.Length(max=3000))
     location = fields.String(load_default=None, allow_none=True, validate=validate.Length(max=150))
+    genre = fields.String(load_default=None, allow_none=True, validate=validate.Length(max=100))
     contact_email = fields.String(load_default=None, allow_none=True)
     contact_phone = fields.String(load_default=None, allow_none=True)
     external_video_url = fields.String(load_default=None, allow_none=True, validate=validate.Length(max=500))

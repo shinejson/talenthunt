@@ -89,11 +89,22 @@ def register_user(raw_payload: dict) -> tuple[User, str, str]:
         phone=phone,
         password_hash=hash_password(data["password"]),
         location=(data.get("location") or "").strip() or None,
+        date_of_birth=data.get("date_of_birth"),
+        is_group=bool(data.get("is_group")),
+        group_name=(data.get("group_name") or "").strip() or None,
+        group_member_count=data.get("group_member_count"),
         is_verified=False,
         verification_code=code,
         verification_expires_at=utcnow() + timedelta(hours=24),
         status="ACTIVE",
     )
+    if user.date_of_birth and user.date_of_birth > utcnow().date():
+        raise DomainError(
+            "VALIDATION_ERROR",
+            "Date of birth cannot be in the future.",
+            422,
+            {"date_of_birth": ["Date of birth cannot be in the future."]},
+        )
     db.session.add(user)
     db.session.flush()
 

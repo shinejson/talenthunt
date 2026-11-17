@@ -37,7 +37,11 @@
         ApiService.get('/nominees/' + $routeParams.slug).then(function (res) {
           vm.nominee = res.data;
           if (vm.nominee) {
-            vm.nominee.image = resolveImage(vm.nominee.public_slug);
+            vm.nominee.image = (vm.nominee.profile_image && vm.nominee.profile_image.url) || resolveImage(vm.nominee.public_slug);
+            if (vm.nominee.is_group) {
+              vm.nominee.groupLabel = (vm.nominee.group_name || 'Group act') +
+                (vm.nominee.group_member_count ? ' (' + vm.nominee.group_member_count + ' members)' : '');
+            }
           }
           vm.shareUrl = $window.location.origin + (vm.nominee.voting_path || ('/nominee/' + vm.nominee.public_slug));
           vm.loading = false;
@@ -87,6 +91,7 @@
         '            <th-status-badge status="vm.nominee.status"></th-status-badge>',
         '            <h1 style="margin:6px 0 2px;font-size:1.8rem;">{{ vm.nominee.public_name }}</h1>',
         '            <div class="muted">{{ vm.nominee.category_name }} &bull; {{ vm.nominee.competition_title }} &bull; {{ vm.nominee.location || "Ghana" }}</div>',
+            <div ng-if="vm.nominee.is_group" class="muted" style="font-size:0.95rem;">&#128107; <strong>{{ vm.nominee.groupLabel }}</strong></div>',
         '          </div>',
         '        </div>',
         '        <div class="inline-actions">',
