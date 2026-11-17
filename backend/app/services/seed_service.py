@@ -20,6 +20,7 @@ def seed_demo_data_if_empty():
     ensure_roles_exist()
     if User.query.first() is not None:
         seed_sponsors_partners_if_empty()
+        seed_payouts_if_empty()
         return
 
     now = utcnow()
@@ -540,12 +541,46 @@ def seed_demo_data_if_empty():
         ]
     )
 
-    # 8. Platform settings (announcements & FAQ)
+    # 8. Platform settings (announcements & FAQ & payments)
     db.session.add_all(
         [
             PlatformSetting(
                 key="voting_control",
                 value_json={"global_voting_paused": False, "incident_message": ""},
+            ),
+            PlatformSetting(
+                key="payment_gateway",
+                value_json={
+                    "active_provider": "mock",
+                    "environment": "sandbox",
+                    "currency": "GHS",
+                    "allow_mobile_money": True,
+                    "allow_card": True,
+                    "min_amount_ghs": 1.0,
+                    "max_daily_spend_ghs": 5000.0,
+                    "platform_fee_percent": 0.0,
+                    "auto_settle_mock": True,
+                    "paystack": {
+                        "enabled": True,
+                        "public_key": "pk_test_stagelight_gh_mock_key",
+                        "secret_key": "sk_test_stagelight_gh_mock_key",
+                        "webhook_secret": "mock-webhook-secret",
+                        "base_url": "https://api.paystack.co",
+                    },
+                    "hubtel": {
+                        "enabled": False,
+                        "client_id": "",
+                        "client_secret": "",
+                        "merchant_account_number": "",
+                    },
+                    "flutterwave": {
+                        "enabled": False,
+                        "public_key": "",
+                        "secret_key": "",
+                        "encryption_key": "",
+                        "webhook_secret": "",
+                    },
+                },
             ),
             PlatformSetting(
                 key="announcements",
@@ -569,6 +604,7 @@ def seed_demo_data_if_empty():
         ]
     )
     seed_sponsors_partners_if_empty(comp=comp, creator=manager, commit=False)
+    seed_payouts_if_empty(comp=comp, commit=False)
     db.session.commit()
 
 
@@ -1067,6 +1103,160 @@ def seed_sponsors_partners_if_empty(comp: Competition | None = None, creator: Us
                 ),
             ]
         )
+
+    if commit:
+        db.session.commit()
+
+
+def seed_payouts_if_empty(comp: Competition | None = None, commit: bool = True):
+    from app.models.financial import Payout
+    if Payout.query.first() is not None:
+        return
+
+    if comp is None:
+        comp = Competition.query.order_by(Competition.created_at.desc()).first()
+    comp_id = comp.id if comp else None
+
+    approver = User.query.filter_by(email="finance@stagelight.gh").first() or User.query.filter_by(email="admin@stagelight.gh").first()
+    approver_id = approver.id if approver else None
+
+    nominees = Nominee.query.filter_by(status="ACTIVE").limit(3).all()
+    nom1 = nominees[0] if len(nominees) > 0 else None
+    nom2 = nominees[1] if len(nominees) > 1 else None
+
+    now = utcnow()
+
+    demo_payouts = [
+        Payout(
+            reference_no="DISB-2026-0001",
+            title="StageLight Ghana 2026 — 1st Place Champion Cash Prize (Tranche 1)",
+            payout_type="PRIZE",
+            beneficiary_type="NOMINEE",
+            beneficiary_name=nom1.public_name if nom1 else "Kofi Mensah",
+            beneficiary_contact="+233240112233",
+            competition_id=comp_id,
+            nominee_id=nom1.id if nom1 else None,
+            amount_minor=5000000,
+            tax_withheld_minor=250000,
+            net_amount_minor=4750000,
+            currency="GHS",
+            payment_method="BANK_TRANSFER",
+            account_details="Stanbic Bank Ghana — ACC: 9040001882910 — High Street Branch",
+            status="APPROVED",
+            scheduled_date=now + timedelta(days=5),
+            approved_by_user_id=approver_id,
+            approved_at=now - timedelta(days=1),
+            notes="Initial 50% milestone disbursement per Official Charter Section 4.1 upon audit clearance.",
+        ),
+        Payout(
+            reference_no="DISB-2026-0002",
+            title="StageLight Ghana 2026 — 2nd Place Runner-Up Cash Prize (Full Allocation)",
+            payout_type="PRIZE",
+            beneficiary_type="NOMINEE",
+            beneficiary_name=nom2.public_name if nom2 else "Efya Serwaa",
+            beneficiary_contact="+233201223344",
+            competition_id=comp_id,
+            nominee_id=nom2.id if nom2 else None,
+            amount_minor=4000000,
+            tax_withheld_minor=200000,
+            net_amount_minor=3800000,
+            currency="GHS",
+            payment_method="BANK_TRANSFER",
+            account_details="GCB Bank PLC — ACC: 1041128394019 — Kwame Nkrumah Circle",
+            status="PENDING_APPROVAL",
+            scheduled_date=now + timedelta(days=10),
+            notes="Full prize allocation awaiting second-person finance clearance and Ghana Card verification.",
+        ),
+        Payout(
+            reference_no="DISB-2026-0003",
+            title="Highlife Voice of the Nation — Category Excellence Grant",
+            payout_type="GRANT",
+            beneficiary_type="NOMINEE",
+            beneficiary_name="Kwabena Boadi (Highlife Vocals)",
+            beneficiary_contact="+233244998811",
+            competition_id=comp_id,
+            amount_minor=500000,
+            tax_withheld_minor=25000,
+            net_amount_minor=475000,
+            currency="GHS",
+            payment_method="MOBILE_MONEY",
+            account_details="MTN Mobile Money — +233244998811 (Kwabena Boadi)",
+            status="DISBURSED",
+            scheduled_date=now - timedelta(days=3),
+            disbursed_at=now - timedelta(days=3),
+            approved_by_user_id=approver_id,
+            approved_at=now - timedelta(days=4),
+            transaction_reference="MM-GH-8829104",
+            notes="Special jury grant for exceptional Highlife vocal demonstration and studio preparation.",
+        ),
+        Payout(
+            reference_no="DISB-2026-0004",
+            title="Master of the Rhythm & Stage — Category Excellence Grant",
+            payout_type="GRANT",
+            beneficiary_type="NOMINEE",
+            beneficiary_name="Esi Darkwah (Afro-Dance)",
+            beneficiary_contact="+233201998877",
+            competition_id=comp_id,
+            amount_minor=500000,
+            tax_withheld_minor=25000,
+            net_amount_minor=475000,
+            currency="GHS",
+            payment_method="MOBILE_MONEY",
+            account_details="Telecel Cash — +233201998877 (Esi Darkwah)",
+            status="DISBURSED",
+            scheduled_date=now - timedelta(days=6),
+            disbursed_at=now - timedelta(days=5),
+            approved_by_user_id=approver_id,
+            approved_at=now - timedelta(days=6),
+            transaction_reference="TC-GH-4921008",
+            notes="Accra Grand Dome dance residency and choreography development support grant.",
+        ),
+        Payout(
+            reference_no="DISB-2026-0005",
+            title="Regional Audition Showcase — Sound & Lighting Engineering Production Stipend",
+            payout_type="PRODUCTION",
+            beneficiary_type="VENDOR",
+            beneficiary_name="Accra SoundWorks & Live Stages Ltd",
+            beneficiary_contact="+233302220199",
+            competition_id=comp_id,
+            amount_minor=750000,
+            tax_withheld_minor=37500,
+            net_amount_minor=712500,
+            currency="GHS",
+            payment_method="BANK_TRANSFER",
+            account_details="Ecobank Ghana — ACC: 00210394812 — Ridge Branch",
+            status="DISBURSED",
+            scheduled_date=now - timedelta(days=8),
+            disbursed_at=now - timedelta(days=7),
+            approved_by_user_id=approver_id,
+            approved_at=now - timedelta(days=8),
+            transaction_reference="ECO-BFT-918203",
+            notes="Regional audition tour live sound reinforcement, microphones, and wireless monitor rigs.",
+        ),
+        Payout(
+            reference_no="DISB-2026-0006",
+            title="Northern Belt Auditions — Contestant Travel & Welfare Stipend",
+            payout_type="STIPEND",
+            beneficiary_type="CONTESTANT",
+            beneficiary_name="Tamale Cultural Centre Youth Liaison",
+            beneficiary_contact="+233277112244",
+            competition_id=comp_id,
+            amount_minor=300000,
+            tax_withheld_minor=0,
+            net_amount_minor=300000,
+            currency="GHS",
+            payment_method="MOBILE_MONEY",
+            account_details="AT Money — +233277112244",
+            status="APPROVED",
+            scheduled_date=now + timedelta(days=2),
+            approved_by_user_id=approver_id,
+            approved_at=now - timedelta(hours=12),
+            notes="Transportation and accommodation subsidy for 12 northern belt semi-final auditionees.",
+        ),
+    ]
+
+    for p in demo_payouts:
+        db.session.add(p)
 
     if commit:
         db.session.commit()

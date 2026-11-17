@@ -43,6 +43,21 @@
           });
         }
 
+        function handleResize() {
+          if (chartInstance) {
+            chartInstance.resize();
+          }
+        }
+        angular.element($window).on('resize', handleResize);
+
+        $scope.$on('$destroy', function () {
+          angular.element($window).off('resize', handleResize);
+          if (chartInstance) {
+            chartInstance.destroy();
+            chartInstance = null;
+          }
+        });
+
         vm.load = function () {
           vm.loading = true;
           ApiService.get('/nominee/dashboard').then(function (res) {

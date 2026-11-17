@@ -13,8 +13,25 @@ class PaystackPaymentAdapter(BasePaymentAdapter):
 
     provider_name = "paystack"
 
+    def _get_config(self) -> dict:
+        try:
+            from app.integrations.payments.provider_adapter import get_payment_gateway_settings
+            cfg = get_payment_gateway_settings()
+            return cfg.get("paystack") or {}
+        except Exception:
+            return {}
+
+    def _get_secret_key(self) -> str:
+        pstk = self._get_config()
+        key = (pstk.get("secret_key") or current_app.config.get("PAYSTACK_SECRET_KEY") or "").strip()
+        return key
+
+    def _get_base_url(self) -> str:
+        pstk = self._get_config()
+        return (pstk.get("base_url") or current_app.config.get("PAYSTACK_BASE_URL", "https://api.paystack.co")).strip()
+
     def _headers(self) -> dict:
-        secret = current_app.config.get("PAYSTACK_SECRET_KEY", "")
+        secret = self._get_secret_key()
         if not secret:
             raise DomainError("PAYMENT_CONFIG_ERROR", "Paystack secret key is not configured.", 500)
         return {
@@ -33,7 +50,7 @@ class PaystackPaymentAdapter(BasePaymentAdapter):
         customer_phone: str | None = None,
         callback_url: str | None = None,
     ) -> PaymentInitResult:
-        base_url = current_app.config.get("PAYSTACK_BASE_URL", "https://api.paystack.co")
+        base_url = self._get_base_url()
         provider_ref = f"PSTK-{order_reference}-{secrets.token_hex(3).upper()}"
         body = {
             "email": customer_email or "voter@stagelight.gh",
@@ -63,7 +80,13 @@ class PaystackPaymentAdapter(BasePaymentAdapter):
         )
 
     def verify_webhook_signature(self, raw_body: bytes, headers: dict) -> bool:
-        secret = current_app.config.get("PAYSTACK_SECRET_KEY") or current_app.config.get("PAYMENT_WEBHOOK_SECRET", "")
+        pstk = self._get_config()
+        secret = (
+            pstk.get("webhook_secret")
+            or pstk.get("secret_key")
+            or current_app.config.get("PAYSTACK_SECRET_KEY")
+            or current_app.config.get("PAYMENT_WEBHOOK_SECRET", "")
+        )
         sig = headers.get("X-Paystack-Signature") or headers.get("x-paystack-signature")
         if not secret or not sig:
             return False
@@ -88,7 +111,7 @@ class PaystackPaymentAdapter(BasePaymentAdapter):
         }
 
     def inquire_transaction(self, provider_reference: str) -> ProviderTransactionState | None:
-        base_url = current_app.config.get("PAYSTACK_BASE_URL", "https://api.paystack.co")
+        base_url = self._get_base_url()
         with httpx.Client(timeout=15.0) as client:
             resp = client.get(f"{base_url}/transaction/verify/{provider_reference}", headers=self._headers())
             if resp.status_code == 404:

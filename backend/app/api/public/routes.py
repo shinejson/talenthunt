@@ -138,10 +138,20 @@ def get_public_ads():
 @public_bp.get("/public/info")
 def public_info():
     ann_setting = PlatformSetting.query.filter_by(key="announcements").first()
+    info_setting = PlatformSetting.query.filter_by(key="basic_info").first()
+    binfo = info_setting.value_json if info_setting and isinstance(info_setting.value_json, dict) else {}
+    platform_name = binfo.get("platform_name") or current_app.config.get("PLATFORM_NAME", "StageLight")
+
     comp = Competition.query.filter(Competition.status != "DRAFT").order_by(Competition.created_at.desc()).first()
     return api_success(
         {
-            "platform_name": current_app.config.get("PLATFORM_NAME", "StageLight"),
+            "platform_name": platform_name,
+            "logo_url": binfo.get("logo_url"),
+            "favicon_url": binfo.get("favicon_url"),
+            "currency": binfo.get("currency") or "GHS",
+            "contact_email": binfo.get("contact_email") or "support@stagelight.com.gh",
+            "contact_phone": binfo.get("contact_phone") or "+233 24 000 0000",
+            "basic_info": binfo,
             "incident_banner": get_incident_banner(),
             "faqs": DEFAULT_FAQS,
             "announcements": (ann_setting.value_json or {}).get("items", []) if ann_setting else [],

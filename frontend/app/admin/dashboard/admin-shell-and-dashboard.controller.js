@@ -4,7 +4,10 @@
   var savedAdminScrollTop = 0;
 
   var ADMIN_NAV_META = {
-    '/admin': { label: 'KPI Overview', icon: 'dashboard' },
+    '/admin': { label: 'Platform Operations Overview', icon: 'dashboard' },
+    '/admin/accounting': { label: 'Accounting Hub', icon: 'credit-card' },
+    '/admin/accounting/transactions': { label: 'Financial Records', icon: 'receipt' },
+    '/admin/accounting/payouts': { label: 'Prize Disbursements', icon: 'trophy' },
     '/admin/competitions': { label: 'Competitions', icon: 'trophy' },
     '/admin/categories': { label: 'Categories', icon: 'layers' },
     '/admin/rounds': { label: 'Rounds & Packages', icon: 'clock' },
@@ -54,10 +57,13 @@
         '    <a ng-if="$ctrl.perms.canManageCompetition() || $ctrl.perms.canModerate() || $ctrl.perms.canFinance()" href="/admin/sponsors-partners" ng-click="$ctrl.drawerOpen=false" ng-class="{active: $ctrl.is(\'/admin/sponsors-partners\')}"><th-icon name="handshake" size="17"></th-icon><span>Sponsors, Partners &amp; Supporters</span></a>',
         '    <a ng-if="$ctrl.perms.canModerate() || $ctrl.perms.canFinance()" href="/admin/moderation" ng-click="$ctrl.drawerOpen=false" ng-class="{active: $ctrl.is(\'/admin/moderation\')}"><th-icon name="shield-alert" size="17"></th-icon><span>Moderation &amp; Support</span></a>',
 
-        '    <div class="side-nav-section-label" ng-if="$ctrl.perms.canFinance()">Finance &amp; Ledger</div>',
-        '    <a ng-if="$ctrl.perms.canFinance()" href="/admin/votes" ng-click="$ctrl.drawerOpen=false" ng-class="{active: $ctrl.is(\'/admin/votes\')}"><th-icon name="book-ledger" size="17"></th-icon><span>Vote Ledger</span></a>',
-        '    <a ng-if="$ctrl.perms.canFinance()" href="/admin/orders" ng-click="$ctrl.drawerOpen=false" ng-class="{active: $ctrl.is(\'/admin/orders\')}"><th-icon name="receipt" size="17"></th-icon><span>Orders</span></a>',
+        '    <div class="side-nav-section-label" ng-if="$ctrl.perms.canFinance()">Accounting &amp; Finance</div>',
+        '    <a ng-if="$ctrl.perms.canFinance()" href="/admin/accounting" ng-click="$ctrl.drawerOpen=false" ng-class="{active: $ctrl.is(\'/admin/accounting\')}"><th-icon name="credit-card" size="17"></th-icon><span>Financial Hub</span></a>',
+        '    <a ng-if="$ctrl.perms.canFinance()" href="/admin/accounting/transactions" ng-click="$ctrl.drawerOpen=false" ng-class="{active: $ctrl.is(\'/admin/accounting/transactions\')}"><th-icon name="receipt" size="17"></th-icon><span>Financial Records</span></a>',
+        '    <a ng-if="$ctrl.perms.canFinance()" href="/admin/accounting/payouts" ng-click="$ctrl.drawerOpen=false" ng-class="{active: $ctrl.is(\'/admin/accounting/payouts\')}"><th-icon name="trophy" size="17"></th-icon><span>Prize Disbursements</span></a>',
         '    <a ng-if="$ctrl.perms.canFinance()" href="/admin/reconciliation" ng-click="$ctrl.drawerOpen=false" ng-class="{active: $ctrl.is(\'/admin/reconciliation\')}"><th-icon name="credit-card" size="17"></th-icon><span>Payments &amp; Reconcile</span></a>',
+        '    <a ng-if="$ctrl.perms.canFinance()" href="/admin/orders" ng-click="$ctrl.drawerOpen=false" ng-class="{active: $ctrl.is(\'/admin/orders\')}"><th-icon name="receipt" size="17"></th-icon><span>Orders</span></a>',
+        '    <a ng-if="$ctrl.perms.canFinance()" href="/admin/votes" ng-click="$ctrl.drawerOpen=false" ng-class="{active: $ctrl.is(\'/admin/votes\')}"><th-icon name="book-ledger" size="17"></th-icon><span>Vote Ledger</span></a>',
         '    <a ng-if="$ctrl.perms.canFinance()" href="/admin/reports" ng-click="$ctrl.drawerOpen=false" ng-class="{active: $ctrl.is(\'/admin/reports\')}"><th-icon name="pie-chart" size="17"></th-icon><span>Reports &amp; CSV</span></a>',
         '    <a ng-if="$ctrl.perms.canFinance()" href="/admin/audit-logs" ng-click="$ctrl.drawerOpen=false" ng-class="{active: $ctrl.is(\'/admin/audit-logs\')}"><th-icon name="history" size="17"></th-icon><span>Audit Logs</span></a>',
 
@@ -147,8 +153,8 @@
           };
         }]
     })
-    .controller('AdminDashboardController', ['$rootScope', 'ApiService', 'PermissionsService', 'ToastService', 'AdminFilterUtils',
-      function ($rootScope, ApiService, PermissionsService, ToastService, AdminFilterUtils) {
+    .controller('AdminDashboardController', ['$rootScope', '$scope', '$window', '$timeout', 'ApiService', 'PermissionsService', 'ToastService', 'AdminFilterUtils',
+      function ($rootScope, $scope, $window, $timeout, ApiService, PermissionsService, ToastService, AdminFilterUtils) {
         var vm = this;
         vm.perms = PermissionsService;
         vm.loading = true;
@@ -160,6 +166,169 @@
           audit_entity: '',
           audit_q: ''
         };
+        vm.chartMetric = 'revenue';
+
+        var trendChartInstance = null;
+        var catChartInstance = null;
+        var channelChartInstance = null;
+
+        function destroyCharts() {
+          if (trendChartInstance) { trendChartInstance.destroy(); trendChartInstance = null; }
+          if (catChartInstance) { catChartInstance.destroy(); catChartInstance = null; }
+          if (channelChartInstance) { channelChartInstance.destroy(); channelChartInstance = null; }
+        }
+
+        vm.setMetric = function (m) {
+          vm.chartMetric = m;
+          renderCharts();
+        };
+
+        function renderCharts() {
+          if (!vm.data || !vm.data.chart_analytics || !$window.Chart) return;
+          var analytics = vm.data.chart_analytics;
+          var isRev = vm.chartMetric === 'revenue';
+
+          // 1. Trend chart
+          var trendCanvas = document.getElementById('adminRevenueTrendChart');
+          if (trendCanvas) {
+            if (trendChartInstance) trendChartInstance.destroy();
+            var trendList = analytics.revenue_trend || [];
+            var labels = trendList.map(function (d) {
+              var p = d.date.split('-');
+              return p.length === 3 ? (p[1] + '/' + p[2]) : d.date;
+            });
+            var vals = trendList.map(function (d) { return isRev ? d.gross_ghs : d.votes; });
+            trendChartInstance = new $window.Chart(trendCanvas.getContext('2d'), {
+              type: isRev ? 'line' : 'bar',
+              data: {
+                labels: labels.length ? labels : ['Today'],
+                datasets: [{
+                  label: isRev ? 'Verified Collections (GHS)' : 'Daily Verified Votes',
+                  data: vals.length ? vals : [0],
+                  borderColor: isRev ? '#f59e0b' : '#a855f7',
+                  backgroundColor: isRev ? 'rgba(245, 158, 11, 0.16)' : 'rgba(168, 85, 247, 0.22)',
+                  fill: true,
+                  tension: 0.35,
+                  borderWidth: 2,
+                  pointRadius: 3.5,
+                  pointHoverRadius: 6,
+                  pointBackgroundColor: isRev ? '#f59e0b' : '#a855f7',
+                  borderRadius: 6
+                }]
+              },
+              options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                  legend: { display: false },
+                  tooltip: {
+                    callbacks: {
+                      label: function (ctx) {
+                        return (isRev ? 'GHS ' : '') + ctx.parsed.y.toLocaleString() + (!isRev ? ' votes' : '');
+                      }
+                    }
+                  }
+                },
+                scales: {
+                  y: {
+                    beginAtZero: true,
+                    grid: { color: 'rgba(255, 255, 255, 0.05)' },
+                    ticks: {
+                      color: '#9ca3af',
+                      callback: function (v) { return isRev ? ('GHS ' + v) : v; }
+                    }
+                  },
+                  x: {
+                    grid: { display: false },
+                    ticks: { color: '#9ca3af' }
+                  }
+                }
+              }
+            });
+          }
+
+          // 2. Category distribution
+          var catCanvas = document.getElementById('adminCategoryChart');
+          if (catCanvas) {
+            if (catChartInstance) catChartInstance.destroy();
+            var cats = analytics.category_distribution || [];
+            var catLabels = cats.map(function (c) { return c.category_name; });
+            var catVals = cats.map(function (c) { return isRev ? c.revenue_ghs : c.votes; });
+            catChartInstance = new $window.Chart(catCanvas.getContext('2d'), {
+              type: 'doughnut',
+              data: {
+                labels: catLabels.length ? catLabels : ['Auditions'],
+                datasets: [{
+                  data: catVals.length ? catVals : [1],
+                  backgroundColor: ['#f59e0b', '#3b82f6', '#10b981', '#ec4899', '#8b5cf6', '#06b6d4'],
+                  borderWidth: 0
+                }]
+              },
+              options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                  legend: { position: 'bottom', labels: { boxWidth: 10, color: '#d1d5db', font: { size: 10 } } },
+                  tooltip: {
+                    callbacks: {
+                      label: function (ctx) {
+                        return ' ' + ctx.label + ': ' + (isRev ? 'GHS ' : '') + ctx.parsed.toLocaleString() + (!isRev ? ' votes' : '');
+                      }
+                    }
+                  }
+                },
+                cutout: '65%'
+              }
+            });
+          }
+
+          // 3. Channel breakdown
+          var chCanvas = document.getElementById('adminChannelChart');
+          if (chCanvas) {
+            if (channelChartInstance) channelChartInstance.destroy();
+            var chs = analytics.channel_breakdown || [];
+            var chLabels = chs.map(function (ch) { return ch.channel_label; });
+            var chVals = chs.map(function (ch) { return ch.amount_ghs; });
+            channelChartInstance = new $window.Chart(chCanvas.getContext('2d'), {
+              type: 'doughnut',
+              data: {
+                labels: chLabels.length ? chLabels : ['Mobile Money'],
+                datasets: [{
+                  data: chVals.length ? chVals : [1],
+                  backgroundColor: ['#eab308', '#38bdf8', '#6366f1', '#10b981'],
+                  borderWidth: 0
+                }]
+              },
+              options: {
+                responsive: true,
+                maintainAspectRatio: false,
+                plugins: {
+                  legend: { position: 'bottom', labels: { boxWidth: 10, color: '#d1d5db', font: { size: 10 } } },
+                  tooltip: {
+                    callbacks: {
+                      label: function (ctx) {
+                        return ' ' + ctx.label + ': GHS ' + ctx.parsed.toLocaleString();
+                      }
+                    }
+                  }
+                },
+                cutout: '65%'
+              }
+            });
+          }
+        }
+
+        function onWindowResize() {
+          if (revChartInstance) revChartInstance.resize();
+          if (catChartInstance) catChartInstance.resize();
+          if (channelChartInstance) channelChartInstance.resize();
+        }
+        angular.element($window).on('resize', onWindowResize);
+
+        $scope.$on('$destroy', function () {
+          angular.element($window).off('resize', onWindowResize);
+          destroyCharts();
+        });
 
         vm.activeFilterCount = function () {
           return AdminFilterUtils.countActive(vm.filters);
@@ -179,6 +348,7 @@
               vm.pauseForm.incident_message = vm.data.incident_banner.message || '';
             }
             vm.loading = false;
+            $timeout(renderCharts, 60);
           }, function () { vm.loading = false; });
         };
 
@@ -201,8 +371,8 @@
       $templateCache.put('admin/dashboard.html', [
         '<div class="container portal-layout">',
         '  <th-admin-nav></th-admin-nav>',
-        '  <div>',
-        '    <div class="flex-between mb-2">',
+        '  <div class="admin-dashboard-page">',
+        '    <div class="flex-between mb-2 admin-page-header">',
         '      <h1 style="margin:0;font-size:1.55rem;">Platform Operations Overview</h1>',
         '      <button type="button" class="btn btn-sm btn-secondary" ng-click="vm.load()"><th-icon name="refresh" size="15"></th-icon><span>Refresh</span></button>',
         '    </div>',
@@ -254,16 +424,65 @@
 
         '    <div ng-if="vm.loading" class="loading-box">Loading platform KPIs...</div>',
         '    <div ng-if="vm.data">',
-        '      <div class="grid-4 mb-3">',
+        '      <div class="admin-kpi-grid mb-3">',
         '        <div class="kpi-card"><div class="kpi-label">Applications</div><div class="kpi-value">{{ vm.data.kpis.total_applications }}</div><div class="kpi-sub">{{ vm.data.kpis.pending_reviews }} awaiting review</div></div>',
         '        <div class="kpi-card"><div class="kpi-label">Active Nominees</div><div class="kpi-value">{{ vm.data.kpis.active_nominees }}</div><div class="kpi-sub">{{ vm.data.kpis.active_rounds_count }} open round(s)</div></div>',
         '        <div class="kpi-card"><div class="kpi-label">Ledger Valid Votes</div><div class="kpi-value">{{ vm.data.kpis.total_valid_votes | number }}</div><div class="kpi-sub">{{ vm.data.kpis.quarantined_payments }} quarantined tx</div></div>',
         '        <div class="kpi-card"><div class="kpi-label">Net Verified Collections</div><div class="kpi-value">{{ vm.data.kpis.net_collections_major | ghsCurrency:"GHS" }}</div><div class="kpi-sub">Refunds: {{ vm.data.kpis.refunded_major | ghsCurrency:"GHS" }}</div></div>',
         '      </div>',
         '',
+        '      <!-- PLATFORM OPERATIONS & FINANCIAL CHARTS -->',
+        '      <div class="card mb-3 admin-charts-card">',
+        '        <div class="flex-between mb-2 admin-charts-header">',
+        '          <div>',
+        '            <h3 style="margin:0;display:flex;align-items:center;gap:8px;">',
+        '              <th-icon name="bar-chart" size="18"></th-icon>',
+        '              <span>Platform Operations &amp; Revenue Analytics</span>',
+        '            </h3>',
+        '            <p class="muted" style="margin:3px 0 0;font-size:0.86rem;">Interactive verified collections timeline, category engagement share, and settlement channel distribution.</p>',
+        '          </div>',
+        '          <div class="inline-actions admin-charts-actions">',
+        '            <div class="btn-group">',
+        '              <button type="button" class="btn btn-sm" ng-class="{\'btn-primary\': vm.chartMetric === \'revenue\', \'btn-secondary\': vm.chartMetric !== \'revenue\'}" ng-click="vm.setMetric(\'revenue\')">Collections (GHS)</button>',
+        '              <button type="button" class="btn btn-sm" ng-class="{\'btn-primary\': vm.chartMetric === \'votes\', \'btn-secondary\': vm.chartMetric !== \'votes\'}" ng-click="vm.setMetric(\'votes\')">Vote Volume</button>',
+        '            </div>',
+        '            <a ng-if="vm.perms.canFinance()" href="/admin/accounting" class="btn btn-sm btn-secondary"><th-icon name="credit-card" size="14"></th-icon><span>Accounting Center &rarr;</span></a>',
+        '          </div>',
+        '        </div>',
+        '        <div class="admin-charts-grid">',
+        '          <div class="chart-panel chart-panel-timeline">',
+        '            <div class="flex-between mb-2">',
+        '              <strong style="font-size:0.86rem;color:var(--text-main);"><th-icon name="bar-chart" size="14"></th-icon><span>{{ vm.chartMetric === "revenue" ? "14-Day Collections Timeline (GHS)" : "14-Day Verified Vote Activity" }}</span></strong>',
+        '              <span class="muted" style="font-size:0.75rem;">Daily Verified</span>',
+        '            </div>',
+        '            <div class="chart-canvas-wrap">',
+        '              <canvas id="adminRevenueTrendChart"></canvas>',
+        '            </div>',
+        '          </div>',
+        '          <div class="chart-panel chart-panel-category">',
+        '            <div class="flex-between mb-2">',
+        '              <strong style="font-size:0.86rem;color:var(--text-main);"><th-icon name="pie-chart" size="14"></th-icon><span>Category Share</span></strong>',
+        '              <span class="muted" style="font-size:0.75rem;">Discipline</span>',
+        '            </div>',
+        '            <div class="chart-canvas-wrap">',
+        '              <canvas id="adminCategoryChart"></canvas>',
+        '            </div>',
+        '          </div>',
+        '          <div class="chart-panel chart-panel-channel">',
+        '            <div class="flex-between mb-2">',
+        '              <strong style="font-size:0.86rem;color:var(--text-main);"><th-icon name="credit-card" size="14"></th-icon><span>Settlement Channels</span></strong>',
+        '              <span class="muted" style="font-size:0.75rem;">Payment Mix</span>',
+        '            </div>',
+        '            <div class="chart-canvas-wrap">',
+        '              <canvas id="adminChannelChart"></canvas>',
+        '            </div>',
+        '          </div>',
+        '        </div>',
+        '      </div>',
+        '',
         '      <!-- SPONSORS, PARTNERS & SUPPORTERS ECOSYSTEM -->',
         '      <div class="card mb-3">',
-        '        <div class="flex-between mb-2" style="flex-wrap:wrap;gap:10px;">',
+        '        <div class="flex-between mb-2 admin-ecosystem-header">',
         '          <div>',
         '            <h3 style="margin:0;display:flex;align-items:center;gap:8px;">',
         '              <th-icon name="handshake" size="18"></th-icon>',
@@ -271,13 +490,13 @@
         '            </h3>',
         '            <p class="muted" style="margin:3px 0 0;font-size:0.86rem;">Official Headline &amp; Season Sponsors, Strategic Ecosystem Partners, Backstage Supporters, and Open Brand Inquiries.</p>',
         '          </div>',
-        '          <div class="inline-actions">',
+        '          <div class="inline-actions admin-ecosystem-actions">',
         '            <a href="/sponsors" target="_blank" class="btn btn-sm btn-secondary"><span>Public /sponsors</span><th-icon name="external-link" size="13"></th-icon></a>',
         '            <a href="/partners" target="_blank" class="btn btn-sm btn-secondary"><span>Public /partners</span><th-icon name="external-link" size="13"></th-icon></a>',
         '            <a href="/admin/sponsors-partners" class="btn btn-sm btn-primary"><th-icon name="sliders" size="14"></th-icon><span>Manage Directory &rarr;</span></a>',
         '          </div>',
         '        </div>',
-        '        <div class="grid-4 mb-2">',
+        '        <div class="admin-mini-kpi-grid mb-2">',
         '          <div class="kpi-mini-card"><div class="kpi-label">Official Sponsors</div><div class="kpi-value">{{ vm.data.kpis.active_sponsors || 0 }}</div><div class="kpi-sub">Title, Platinum &amp; Gold tiers</div></div>',
         '          <div class="kpi-mini-card"><div class="kpi-label">Strategic Partners</div><div class="kpi-value">{{ vm.data.kpis.active_partners || 0 }}</div><div class="kpi-sub">Broadcasters, Fintech &amp; Venues</div></div>',
         '          <div class="kpi-mini-card"><div class="kpi-label">Active Supporters</div><div class="kpi-value">{{ vm.data.kpis.active_supporters || 0 }}</div><div class="kpi-sub">Regional &amp; Backstage champions</div></div>',
@@ -294,10 +513,12 @@
 
         '      <div class="card mb-3" ng-if="vm.perms.canManageCompetition()">',
         '        <h3 style="margin-top:0;">Emergency Incident &amp; Voting Control</h3>',
-        '        <div class="inline-actions" style="width:100%;">',
-        '          <input type="text" class="form-control" style="flex:1;min-width:220px;" ng-model="vm.pauseForm.incident_message" placeholder="Incident banner text (optional)..." />',
-        '          <button type="button" class="btn btn-danger" ng-click="vm.applyPause(true)">Pause Global Voting</button>',
-        '          <button type="button" class="btn btn-success" ng-click="vm.applyPause(false)">Resume Voting</button>',
+        '        <div class="inline-actions admin-pause-bar">',
+        '          <input type="text" class="form-control admin-pause-input" ng-model="vm.pauseForm.incident_message" placeholder="Incident banner text (optional)..." />',
+        '          <div class="admin-pause-actions">',
+        '            <button type="button" class="btn btn-danger" ng-click="vm.applyPause(true)">Pause Global Voting</button>',
+        '            <button type="button" class="btn btn-success" ng-click="vm.applyPause(false)">Resume Voting</button>',
+        '          </div>',
         '        </div>',
         '      </div>',
 

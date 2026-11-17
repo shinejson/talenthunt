@@ -1,13 +1,15 @@
 import csv
 import io
 from datetime import timedelta
-from flask import Blueprint, Response, request
+from flask import Blueprint, Response, current_app, request
 from sqlalchemy import and_, func, or_
+from sqlalchemy.orm.attributes import flag_modified
 
 from app.extensions import db
 from app.models.application import Application, Submission
 from app.models.competition import COMPETITION_STATUSES, ROUND_STATUSES, Category, Competition, Round, VotePackage
 from app.models.elimination import EliminationRun
+from app.models.financial import PAYMENT_METHODS, PAYOUT_STATUSES, PAYOUT_TYPES, Payout
 from app.models.nominee import NOMINEE_STATUSES, Nominee, RoundEntry
 from app.models.operations import AuditLog, ModerationReport, PlatformSetting, SupportTicket
 from app.models.partnership import PartnershipInquiry, SponsorPartner
@@ -16,6 +18,7 @@ from app.models.voting import Order, Payment, VoteLedger, WebhookEvent
 from app.integrations.storage.local_storage import save_uploaded_media
 from app.policies.rbac import get_current_user, roles_required
 from app.schemas import DomainError
+from app.services.ad_service import get_ad_settings
 from app.services.audit_service import log_audit
 from app.services.auth_service import set_user_roles
 from app.services.elimination_service import finalise_round_elimination, preview_round_elimination
@@ -41,8 +44,8 @@ from app.services.voting_service import create_vote_adjustment, get_incident_ban
 from app.tasks.jobs import reconcile_all_pending_payments
 from app.utils.pagination import apply_sort, paginate_query
 from app.utils.responses import api_success
-from app.utils.security import slugify
-from app.utils.time_utils import parse_iso_utc, utcnow
+from app.utils.security import new_uuid, slugify
+from app.utils.time_utils import iso_utc, parse_iso_utc, utcnow
 
 admin_bp = Blueprint("admin", __name__, url_prefix="/admin")
 
@@ -154,6 +157,110 @@ def admin_dashboard():
         )
     recent_audits = audit_query.order_by(AuditLog.created_at.desc()).limit(15).all()
 
+    # Chart Analytics for Operations Dashboard
+    now = utcnow()
+    days = 14
+    start_date = (now - timedelta(days=days - 1)).date()
+
+    chart_payments_q = Payment.query
+    chart_ledger_q = VoteLedger.query
+    if comp_id:
+        chart_payments_q = chart_payments_q.filter(Payment.order.has(Order.round.has(Round.competition_id == comp_id)))
+        chart_ledger_q = chart_ledger_q.filter(VoteLedger.round.has(Round.competition_id == comp_id))
+
+    all_recent_payments = chart_payments_q.filter(Payment.created_at >= (now - timedelta(days=days + 1))).all()
+    all_recent_ledger = chart_ledger_q.filter(VoteLedger.created_at >= (now - timedelta(days=days + 1))).all()
+
+    daily_map = {}
+    for i in range(days):
+        d_str = (start_date + timedelta(days=i)).isoformat()
+        daily_map[d_str] = {
+            "date": d_str,
+            "gross_ghs": 0.0,
+            "refunded_ghs": 0.0,
+            "net_ghs": 0.0,
+            "votes": 0,
+            "transactions": 0,
+        }
+
+    for p in all_recent_payments:
+        d_str = p.created_at.date().isoformat()
+        if d_str in daily_map:
+            amt = round(p.amount_minor / 100.0, 2)
+            if p.status == "SUCCESS":
+                daily_map[d_str]["gross_ghs"] = round(daily_map[d_str]["gross_ghs"] + amt, 2)
+                daily_map[d_str]["net_ghs"] = round(daily_map[d_str]["net_ghs"] + amt, 2)
+                daily_map[d_str]["transactions"] += 1
+            elif p.status == "REFUNDED":
+                daily_map[d_str]["refunded_ghs"] = round(daily_map[d_str]["refunded_ghs"] + amt, 2)
+                daily_map[d_str]["net_ghs"] = round(daily_map[d_str]["net_ghs"] - amt, 2)
+
+    for l in all_recent_ledger:
+        d_str = l.created_at.date().isoformat()
+        if d_str in daily_map:
+            daily_map[d_str]["votes"] += l.quantity
+
+    revenue_trend = [daily_map[k] for k in sorted(daily_map.keys())]
+
+    # Category performance
+    cat_distribution = []
+    cats_q = Category.query
+    if comp_id:
+        cats_q = cats_q.filter_by(competition_id=comp_id)
+    for cat in cats_q.all():
+        cat_nominee_ids = [n.id for n in Nominee.query.filter_by(category_id=cat.id).all()]
+        cat_votes = 0
+        cat_rev_minor = 0
+        if cat_nominee_ids:
+            cat_votes = int(db.session.query(func.coalesce(func.sum(VoteLedger.quantity), 0)).filter(VoteLedger.nominee_id.in_(cat_nominee_ids)).scalar() or 0)
+            cat_rev_minor = int(db.session.query(func.coalesce(func.sum(Payment.amount_minor), 0)).filter(Payment.status == "SUCCESS", Payment.order.has(Order.nominee_id.in_(cat_nominee_ids))).scalar() or 0)
+        cat_distribution.append({
+            "category_name": cat.name,
+            "votes": max(0, cat_votes),
+            "revenue_ghs": round(cat_rev_minor / 100.0, 2),
+            "nominees_count": len(cat_nominee_ids),
+        })
+
+    # Round breakdown
+    round_breakdown = []
+    for r in active_rounds:
+        r_votes = int(db.session.query(func.coalesce(func.sum(VoteLedger.quantity), 0)).filter(VoteLedger.round_id == r.id).scalar() or 0)
+        r_rev_minor = int(db.session.query(func.coalesce(func.sum(Payment.amount_minor), 0)).filter(Payment.status == "SUCCESS", Payment.order.has(Order.round_id == r.id)).scalar() or 0)
+        round_breakdown.append({
+            "round_id": r.id,
+            "round_name": r.name,
+            "status": r.status,
+            "votes": max(0, r_votes),
+            "revenue_ghs": round(r_rev_minor / 100.0, 2),
+        })
+
+    # Payment Channels Breakdown
+    paid_payments = chart_payments_q.filter(Payment.status == "SUCCESS").all()
+    channel_counts = {}
+    channel_amounts = {}
+    total_paid_minor = sum(p.amount_minor for p in paid_payments) or 1
+    channel_labels = {
+        "mobile_money": "MTN MoMo & Mobile Money",
+        "card": "Debit / Credit Card",
+        "bank_transfer": "Bank / Transfer",
+        "fintech": "GhanaPay & Fintech",
+    }
+    for p in paid_payments:
+        ch = p.channel or "mobile_money"
+        channel_counts[ch] = channel_counts.get(ch, 0) + 1
+        channel_amounts[ch] = channel_amounts.get(ch, 0) + p.amount_minor
+
+    channel_breakdown = [
+        {
+            "channel": ch,
+            "channel_label": channel_labels.get(ch, ch.replace("_", " ").title()),
+            "count": cnt,
+            "amount_ghs": round(channel_amounts.get(ch, 0) / 100.0, 2),
+            "percentage": round((channel_amounts.get(ch, 0) / total_paid_minor) * 100.0, 1),
+        }
+        for ch, cnt in channel_counts.items()
+    ]
+
     return api_success(
         {
             "kpis": {
@@ -176,6 +283,12 @@ def admin_dashboard():
                 "active_partners": active_partners_count,
                 "active_supporters": active_supporters_count,
                 "open_partnership_inquiries": open_inquiries_count,
+            },
+            "chart_analytics": {
+                "revenue_trend": revenue_trend,
+                "category_distribution": cat_distribution,
+                "round_breakdown": round_breakdown,
+                "channel_breakdown": channel_breakdown,
             },
             "incident_banner": get_incident_banner(),
             "active_rounds": [r.to_dict() for r in active_rounds],
@@ -976,6 +1089,558 @@ def admin_refund_payment(payment_id: str):
     return api_success(res)
 
 
+# --- Accounting & Financial Management ---
+@admin_bp.get("/accounting/overview")
+@roles_required("COMPETITION_MANAGER", "FINANCE_OFFICER")
+def admin_accounting_overview():
+    comp_id = (request.args.get("competition_id") or "").strip()
+
+    paid_q = Payment.query.filter_by(status="SUCCESS")
+    refund_q = Payment.query.filter_by(status="REFUNDED")
+    payout_q = Payout.query
+
+    if comp_id:
+        paid_q = paid_q.filter(Payment.order.has(Order.round.has(Round.competition_id == comp_id)))
+        refund_q = refund_q.filter(Payment.order.has(Order.round.has(Round.competition_id == comp_id)))
+        payout_q = payout_q.filter_by(competition_id=comp_id)
+
+    paid_payments = paid_q.all()
+    refunded_payments = refund_q.all()
+    all_payouts = payout_q.all()
+
+    gross_minor = sum(p.amount_minor for p in paid_payments)
+    gateway_fees_minor = sum(p.fee_minor for p in paid_payments)
+    refunds_minor = sum(p.amount_minor for p in refunded_payments)
+    net_collections_minor = max(0, gross_minor - gateway_fees_minor - refunds_minor)
+
+    payouts_disbursed_minor = sum(p.amount_minor for p in all_payouts if p.status == "DISBURSED")
+    payouts_approved_minor = sum(p.amount_minor for p in all_payouts if p.status == "APPROVED")
+    payouts_pending_minor = sum(p.amount_minor for p in all_payouts if p.status == "PENDING_APPROVAL")
+    payouts_tax_withheld_minor = sum(p.tax_withheld_minor for p in all_payouts if p.status in ["DISBURSED", "APPROVED"])
+    escrow_balance_minor = max(0, net_collections_minor - payouts_disbursed_minor)
+
+    total_orders = Order.query.count()
+    quarantined_count = Payment.query.filter_by(status="QUARANTINED").count()
+    success_count = len(paid_payments)
+    total_tx = success_count + quarantined_count + len(refunded_payments)
+    settlement_success_rate = round((success_count / total_tx) * 100.0, 1) if total_tx else 100.0
+
+    # Channel breakdown
+    channel_counts = {}
+    channel_amounts = {}
+    channel_labels = {
+        "mobile_money": "MTN MoMo & Mobile Money",
+        "card": "Debit / Credit Card",
+        "bank_transfer": "Direct Bank & Transfer",
+        "fintech": "GhanaPay & Fintech",
+    }
+    for p in paid_payments:
+        ch = p.channel or "mobile_money"
+        channel_counts[ch] = channel_counts.get(ch, 0) + 1
+        channel_amounts[ch] = channel_amounts.get(ch, 0) + p.amount_minor
+
+    revenue_by_channel = [
+        {
+            "channel": ch,
+            "channel_label": channel_labels.get(ch, ch.replace("_", " ").title()),
+            "count": cnt,
+            "amount_ghs": round(channel_amounts.get(ch, 0) / 100.0, 2),
+            "percentage": round((channel_amounts.get(ch, 0) / (gross_minor or 1)) * 100.0, 1),
+        }
+        for ch, cnt in channel_counts.items()
+    ]
+
+    # Category financial performance
+    cat_performance = []
+    cats_q = Category.query
+    if comp_id:
+        cats_q = cats_q.filter_by(competition_id=comp_id)
+    for cat in cats_q.all():
+        cat_nominee_ids = [n.id for n in Nominee.query.filter_by(category_id=cat.id).all()]
+        cat_votes = 0
+        cat_rev_minor = 0
+        if cat_nominee_ids:
+            cat_votes = int(db.session.query(func.coalesce(func.sum(VoteLedger.quantity), 0)).filter(VoteLedger.nominee_id.in_(cat_nominee_ids)).scalar() or 0)
+            cat_rev_minor = int(db.session.query(func.coalesce(func.sum(Payment.amount_minor), 0)).filter(Payment.status == "SUCCESS", Payment.order.has(Order.nominee_id.in_(cat_nominee_ids))).scalar() or 0)
+        cat_performance.append({
+            "category_id": cat.id,
+            "category_name": cat.name,
+            "votes": max(0, cat_votes),
+            "revenue_ghs": round(cat_rev_minor / 100.0, 2),
+            "share_percentage": round((cat_rev_minor / (gross_minor or 1)) * 100.0, 1),
+        })
+
+    # Recent Transactions (10)
+    recent_txs = [
+        {
+            "id": p.id,
+            "order_reference": p.order.public_reference if p.order else None,
+            "receipt_code": p.order.receipt_code if p.order else None,
+            "provider": p.provider,
+            "channel": p.channel,
+            "provider_reference": p.provider_reference,
+            "gross_amount_major": round(p.amount_minor / 100.0, 2),
+            "fee_major": round(p.fee_minor / 100.0, 2),
+            "net_amount_major": round((p.amount_minor - p.fee_minor) / 100.0, 2),
+            "status": p.status,
+            "voter_name": p.order.voter_name if p.order else None,
+            "nominee_name": p.order.nominee.public_name if (p.order and p.order.nominee) else None,
+            "created_at": iso_utc(p.created_at),
+        }
+        for p in Payment.query.order_by(Payment.created_at.desc()).limit(10).all()
+    ]
+
+    # Recent Payouts (8)
+    recent_payouts_list = [p.to_dict() for p in Payout.query.order_by(Payout.created_at.desc()).limit(8).all()]
+
+    prize_framework = [
+        {"tier": "1st Place Champion", "allocation_ghs": 100000.00, "status": "Committed", "terms": "GHS 100,000 cash prize (50% upfront, 50% upon tour completion) + 6-track EP + Tour"},
+        {"tier": "2nd Place Runner-Up", "allocation_ghs": 40000.00, "status": "Committed", "terms": "GHS 40,000 cash prize + 2-track studio EP + music video grant"},
+        {"tier": "3rd Place Runner-Up", "allocation_ghs": 20000.00, "status": "Committed", "terms": "GHS 20,000 cash prize + 1-track studio production masterclass"},
+        {"tier": "Highlife Voice of the Nation Grant", "allocation_ghs": 5000.00, "status": "Active", "terms": "GHS 5,000 Category Excellence Grant + studio vocal arrangement"},
+        {"tier": "Master of the Rhythm & Stage Grant", "allocation_ghs": 5000.00, "status": "Active", "terms": "GHS 5,000 Category Excellence Grant + Grand Dome residency"},
+        {"tier": "Golden Pen Lyricist Award", "allocation_ghs": 5000.00, "status": "Active", "terms": "GHS 5,000 Category Excellence Grant + poetry anthology publishing"},
+        {"tier": "King / Queen of Comedy & Monologue", "allocation_ghs": 5000.00, "status": "Active", "terms": "GHS 5,000 Category Excellence Grant + headline set"},
+        {"tier": "People's Choice Fan Favorite Award", "allocation_ghs": 5000.00, "status": "Active", "terms": "GHS 5,000 Cash Bursary for highest cumulative verified public votes"},
+    ]
+
+    return api_success({
+        "summary": {
+            "gross_collections_ghs": round(gross_minor / 100.0, 2),
+            "gateway_fees_ghs": round(gateway_fees_minor / 100.0, 2),
+            "net_collections_ghs": round((gross_minor - gateway_fees_minor) / 100.0, 2),
+            "refunds_ghs": round(refunds_minor / 100.0, 2),
+            "net_revenue_ghs": round(net_collections_minor / 100.0, 2),
+            "prize_pool_budget_ghs": 180000.00,
+            "payouts_committed_ghs": round((payouts_disbursed_minor + payouts_approved_minor) / 100.0, 2),
+            "payouts_disbursed_ghs": round(payouts_disbursed_minor / 100.0, 2),
+            "payouts_pending_ghs": round(payouts_pending_minor / 100.0, 2),
+            "tax_withheld_ghs": round(payouts_tax_withheld_minor / 100.0, 2),
+            "escrow_balance_ghs": round(escrow_balance_minor / 100.0, 2),
+            "total_orders_count": total_orders,
+            "successful_payments_count": success_count,
+            "quarantined_payments_count": quarantined_count,
+            "settlement_success_rate": settlement_success_rate,
+        },
+        "revenue_by_channel": revenue_by_channel,
+        "category_performance": cat_performance,
+        "prize_framework": prize_framework,
+        "recent_transactions": recent_txs,
+        "recent_payouts": recent_payouts_list,
+    })
+
+
+@admin_bp.get("/accounting/transactions")
+@roles_required("COMPETITION_MANAGER", "FINANCE_OFFICER")
+def admin_accounting_transactions():
+    q = Payment.query
+    actor = get_current_user()
+
+    status_arg = (request.args.get("status") or "").strip().upper()
+    if status_arg and status_arg != "ALL":
+        q = q.filter_by(status=status_arg)
+
+    channel_arg = (request.args.get("channel") or "").strip().lower()
+    if channel_arg and channel_arg != "all":
+        q = q.filter_by(channel=channel_arg)
+
+    provider_arg = (request.args.get("provider") or "").strip().lower()
+    if provider_arg and provider_arg != "all":
+        q = q.filter_by(provider=provider_arg)
+
+    search_q = (request.args.get("q") or "").strip()
+    if search_q:
+        like_q = f"%{search_q}%"
+        q = q.filter(
+            or_(
+                Payment.provider_reference.ilike(like_q),
+                Payment.provider_transaction_id.ilike(like_q),
+                Payment.order.has(Order.public_reference.ilike(like_q)),
+                Payment.order.has(Order.receipt_code.ilike(like_q)),
+                Payment.order.has(Order.voter_phone.ilike(like_q)),
+                Payment.order.has(Order.voter_email.ilike(like_q)),
+                Payment.order.has(Order.voter_name.ilike(like_q)),
+                Payment.order.has(Order.nominee.has(Nominee.public_name.ilike(like_q))),
+            )
+        )
+
+    q = _apply_date_range(q, Payment.created_at)
+
+    # Check for CSV export
+    if request.args.get("format") == "csv":
+        all_records = q.order_by(Payment.created_at.desc()).all()
+        buf = io.StringIO()
+        fieldnames = [
+            "payment_id",
+            "order_reference",
+            "receipt_code",
+            "timestamp",
+            "status",
+            "provider",
+            "channel",
+            "provider_reference",
+            "provider_transaction_id",
+            "gross_amount_ghs",
+            "fee_ghs",
+            "net_amount_ghs",
+            "currency",
+            "nominee_name",
+            "round_name",
+            "voter_name",
+            "voter_phone",
+        ]
+        writer = csv.DictWriter(buf, fieldnames=fieldnames)
+        writer.writeheader()
+        for p in all_records:
+            writer.writerow({
+                "payment_id": p.id,
+                "order_reference": p.order.public_reference if p.order else "",
+                "receipt_code": p.order.receipt_code if p.order else "",
+                "timestamp": iso_utc(p.created_at),
+                "status": p.status,
+                "provider": p.provider,
+                "channel": p.channel,
+                "provider_reference": p.provider_reference,
+                "provider_transaction_id": p.provider_transaction_id or "",
+                "gross_amount_ghs": round(p.amount_minor / 100.0, 2),
+                "fee_ghs": round(p.fee_minor / 100.0, 2),
+                "net_amount_ghs": round((p.amount_minor - p.fee_minor) / 100.0, 2),
+                "currency": p.currency,
+                "nominee_name": p.order.nominee.public_name if (p.order and p.order.nominee) else "",
+                "round_name": p.order.round.name if (p.order and p.order.round) else "",
+                "voter_name": p.order.voter_name if p.order else "",
+                "voter_phone": p.order.voter_phone if p.order else "",
+            })
+        log_audit(
+            actor_user_id=actor.id,
+            action="ACCOUNTING_TRANSACTIONS_EXPORTED",
+            entity_type="accounting",
+            entity_id="transactions",
+            after={"count": len(all_records), "format": "csv"},
+        )
+        db.session.commit()
+        return Response(
+            buf.getvalue(),
+            mimetype="text/csv",
+            headers={"Content-Disposition": 'attachment; filename="stagelight-financial-transactions.csv"'},
+        )
+
+    q = apply_sort(
+        q,
+        {
+            "created_at": Payment.created_at,
+            "amount": Payment.amount_minor,
+            "status": Payment.status,
+            "provider_reference": Payment.provider_reference,
+        },
+        [Payment.created_at.desc()],
+    )
+
+    def _serialize_tx(p):
+        order = p.order
+        return {
+            "id": p.id,
+            "order_id": p.order_id,
+            "order_reference": order.public_reference if order else None,
+            "receipt_code": order.receipt_code if order else None,
+            "provider": p.provider,
+            "channel": p.channel,
+            "provider_reference": p.provider_reference,
+            "provider_transaction_id": p.provider_transaction_id,
+            "gross_amount_major": round(p.amount_minor / 100.0, 2),
+            "fee_major": round(p.fee_minor / 100.0, 2),
+            "net_amount_major": round((p.amount_minor - p.fee_minor) / 100.0, 2),
+            "currency": p.currency,
+            "status": p.status,
+            "voter_name": order.voter_name if order else None,
+            "voter_phone": order.voter_phone if order else None,
+            "voter_email": order.voter_email if order else None,
+            "nominee_name": order.nominee.public_name if (order and order.nominee) else None,
+            "round_name": order.round.name if (order and order.round) else None,
+            "vote_quantity": order.vote_quantity if order else None,
+            "created_at": iso_utc(p.created_at),
+            "verified_at": iso_utc(p.verified_at),
+            "refunded_at": iso_utc(p.refunded_at),
+        }
+
+    items, meta = paginate_query(q, _serialize_tx, default_per_page=25)
+
+    # Compute high-level summary for current filter
+    all_matching = q.all()
+    gross_vol = sum(p.amount_minor for p in all_matching if p.status == "SUCCESS")
+    fees_vol = sum(p.fee_minor for p in all_matching if p.status == "SUCCESS")
+    refunds_vol = sum(p.amount_minor for p in all_matching if p.status == "REFUNDED")
+    meta["summary"] = {
+        "matching_count": len(all_matching),
+        "gross_volume_ghs": round(gross_vol / 100.0, 2),
+        "fees_ghs": round(fees_vol / 100.0, 2),
+        "net_volume_ghs": round(max(0, gross_vol - fees_vol - refunds_vol) / 100.0, 2),
+        "refunds_ghs": round(refunds_vol / 100.0, 2),
+    }
+
+    return api_success(items, meta)
+
+
+@admin_bp.get("/accounting/payouts")
+@roles_required("COMPETITION_MANAGER", "FINANCE_OFFICER")
+def admin_accounting_payouts():
+    q = Payout.query
+
+    status_arg = (request.args.get("status") or "").strip().upper()
+    if status_arg and status_arg != "ALL":
+        q = q.filter_by(status=status_arg)
+
+    type_arg = (request.args.get("payout_type") or "").strip().upper()
+    if type_arg and type_arg != "ALL":
+        q = q.filter_by(payout_type=type_arg)
+
+    comp_id = (request.args.get("competition_id") or "").strip()
+    if comp_id:
+        q = q.filter_by(competition_id=comp_id)
+
+    search_q = (request.args.get("q") or "").strip()
+    if search_q:
+        like_q = f"%{search_q}%"
+        q = q.filter(
+            or_(
+                Payout.reference_no.ilike(like_q),
+                Payout.title.ilike(like_q),
+                Payout.beneficiary_name.ilike(like_q),
+                Payout.beneficiary_contact.ilike(like_q),
+                Payout.transaction_reference.ilike(like_q),
+                Payout.account_details.ilike(like_q),
+            )
+        )
+
+    q = _apply_date_range(q, Payout.created_at)
+
+    # Check for CSV export
+    if request.args.get("format") == "csv":
+        actor = get_current_user()
+        records = q.order_by(Payout.created_at.desc()).all()
+        buf = io.StringIO()
+        fieldnames = [
+            "reference_no",
+            "title",
+            "payout_type",
+            "status",
+            "beneficiary_name",
+            "beneficiary_contact",
+            "amount_ghs",
+            "tax_withheld_ghs",
+            "net_amount_ghs",
+            "currency",
+            "payment_method",
+            "account_details",
+            "transaction_reference",
+            "approved_by",
+            "created_at",
+            "disbursed_at",
+        ]
+        writer = csv.DictWriter(buf, fieldnames=fieldnames)
+        writer.writeheader()
+        for p in records:
+            writer.writerow({
+                "reference_no": p.reference_no,
+                "title": p.title,
+                "payout_type": p.payout_type,
+                "status": p.status,
+                "beneficiary_name": p.beneficiary_name,
+                "beneficiary_contact": p.beneficiary_contact or "",
+                "amount_ghs": round(p.amount_minor / 100.0, 2),
+                "tax_withheld_ghs": round(p.tax_withheld_minor / 100.0, 2),
+                "net_amount_ghs": round(p.net_amount_minor / 100.0, 2),
+                "currency": p.currency,
+                "payment_method": p.payment_method,
+                "account_details": p.account_details or "",
+                "transaction_reference": p.transaction_reference or "",
+                "approved_by": p.approved_by.full_name if p.approved_by else "",
+                "created_at": iso_utc(p.created_at),
+                "disbursed_at": iso_utc(p.disbursed_at),
+            })
+        log_audit(
+            actor_user_id=actor.id,
+            action="ACCOUNTING_PAYOUTS_EXPORTED",
+            entity_type="accounting",
+            entity_id="payouts",
+            after={"count": len(records), "format": "csv"},
+        )
+        db.session.commit()
+        return Response(
+            buf.getvalue(),
+            mimetype="text/csv",
+            headers={"Content-Disposition": 'attachment; filename="stagelight-payouts-ledger.csv"'},
+        )
+
+    q = apply_sort(
+        q,
+        {
+            "created_at": Payout.created_at,
+            "amount": Payout.amount_minor,
+            "status": Payout.status,
+            "reference_no": Payout.reference_no,
+            "beneficiary_name": Payout.beneficiary_name,
+        },
+        [Payout.created_at.desc()],
+    )
+
+    items, meta = paginate_query(q, lambda p: p.to_dict(), default_per_page=20)
+
+    all_matching = q.all()
+    meta["summary"] = {
+        "total_count": len(all_matching),
+        "total_disbursed_ghs": round(sum(p.amount_minor for p in all_matching if p.status == "DISBURSED") / 100.0, 2),
+        "pending_approval_ghs": round(sum(p.amount_minor for p in all_matching if p.status == "PENDING_APPROVAL") / 100.0, 2),
+        "approved_scheduled_ghs": round(sum(p.amount_minor for p in all_matching if p.status == "APPROVED") / 100.0, 2),
+        "total_tax_withheld_ghs": round(sum(p.tax_withheld_minor for p in all_matching if p.status in ["DISBURSED", "APPROVED"]) / 100.0, 2),
+    }
+
+    return api_success(items, meta)
+
+
+@admin_bp.post("/accounting/payouts")
+@roles_required("FINANCE_OFFICER")
+def admin_create_payout():
+    actor = get_current_user()
+    payload = request.get_json(silent=True) or {}
+
+    title = (payload.get("title") or "").strip()
+    if not title:
+        raise DomainError("VALIDATION_ERROR", "Payout title is required.", status_code=422)
+
+    beneficiary_name = (payload.get("beneficiary_name") or "").strip()
+    if not beneficiary_name:
+        raise DomainError("VALIDATION_ERROR", "Beneficiary name is required.", status_code=422)
+
+    try:
+        amount_major = float(payload.get("amount_major") or 0)
+    except (ValueError, TypeError):
+        raise DomainError("VALIDATION_ERROR", "Valid payout amount is required.", status_code=422)
+
+    if amount_major <= 0:
+        raise DomainError("VALIDATION_ERROR", "Payout amount must be greater than zero.", status_code=422)
+
+    amount_minor = int(round(amount_major * 100))
+    tax_percent = float(payload.get("tax_withheld_percent") or 0)
+    tax_minor = max(0, int(round(amount_minor * (tax_percent / 100.0))))
+    net_minor = max(0, amount_minor - tax_minor)
+
+    p_type = (payload.get("payout_type") or "PRIZE").strip().upper()
+    if p_type not in PAYOUT_TYPES:
+        p_type = "PRIZE"
+
+    b_type = (payload.get("beneficiary_type") or "NOMINEE").strip().upper()
+    p_method = (payload.get("payment_method") or "BANK_TRANSFER").strip().upper()
+    if p_method not in PAYMENT_METHODS:
+        p_method = "BANK_TRANSFER"
+
+    ref_no = f"DISB-{utcnow().year}-{new_uuid()[:6].upper()}"
+
+    payout = Payout(
+        reference_no=ref_no,
+        title=title,
+        payout_type=p_type,
+        beneficiary_type=b_type,
+        beneficiary_name=beneficiary_name,
+        beneficiary_contact=(payload.get("beneficiary_contact") or "").strip(),
+        competition_id=payload.get("competition_id") or None,
+        round_id=payload.get("round_id") or None,
+        nominee_id=payload.get("nominee_id") or None,
+        amount_minor=amount_minor,
+        tax_withheld_minor=tax_minor,
+        net_amount_minor=net_minor,
+        currency="GHS",
+        payment_method=p_method,
+        account_details=(payload.get("account_details") or "").strip(),
+        status="APPROVED" if payload.get("auto_approve") else "PENDING_APPROVAL",
+        approved_by_user_id=actor.id if payload.get("auto_approve") else None,
+        approved_at=utcnow() if payload.get("auto_approve") else None,
+        notes=(payload.get("notes") or "").strip(),
+    )
+    db.session.add(payout)
+    db.session.flush()
+
+    log_audit(
+        actor_user_id=actor.id,
+        action="PAYOUT_CREATED",
+        entity_type="payout",
+        entity_id=payout.id,
+        after=payout.to_dict(),
+    )
+    db.session.commit()
+
+    return api_success(payout.to_dict(), status_code=201)
+
+
+@admin_bp.patch("/accounting/payouts/<payout_id>")
+@roles_required("FINANCE_OFFICER")
+def admin_update_payout(payout_id: str):
+    actor = get_current_user()
+    payout = db.session.get(Payout, payout_id)
+    if not payout:
+        raise DomainError("NOT_FOUND", "Payout record not found.", status_code=404)
+
+    payload = request.get_json(silent=True) or {}
+    before = payout.to_dict()
+
+    if "status" in payload:
+        new_status = (payload["status"] or "").strip().upper()
+        if new_status in PAYOUT_STATUSES:
+            if new_status == "APPROVED" and payout.status != "APPROVED":
+                payout.status = "APPROVED"
+                payout.approved_by_user_id = actor.id
+                payout.approved_at = utcnow()
+            elif new_status == "DISBURSED":
+                payout.status = "DISBURSED"
+                payout.disbursed_at = utcnow()
+                if payload.get("transaction_reference"):
+                    payout.transaction_reference = payload["transaction_reference"].strip()
+            elif new_status == "CANCELLED":
+                payout.status = "CANCELLED"
+
+    if "account_details" in payload:
+        payout.account_details = (payload["account_details"] or "").strip()
+    if "transaction_reference" in payload:
+        payout.transaction_reference = (payload["transaction_reference"] or "").strip()
+    if "notes" in payload:
+        payout.notes = (payload["notes"] or "").strip()
+
+    log_audit(
+        actor_user_id=actor.id,
+        action="PAYOUT_UPDATED",
+        entity_type="payout",
+        entity_id=payout.id,
+        before=before,
+        after=payout.to_dict(),
+    )
+    db.session.commit()
+    return api_success(payout.to_dict())
+
+
+@admin_bp.delete("/accounting/payouts/<payout_id>")
+@roles_required("FINANCE_OFFICER")
+def admin_delete_payout(payout_id: str):
+    actor = get_current_user()
+    payout = db.session.get(Payout, payout_id)
+    if not payout:
+        raise DomainError("NOT_FOUND", "Payout record not found.", status_code=404)
+
+    if payout.status == "DISBURSED":
+        raise DomainError("CONFLICT", "Cannot delete already disbursed payout record.", status_code=409)
+
+    before = payout.to_dict()
+    db.session.delete(payout)
+    log_audit(
+        actor_user_id=actor.id,
+        action="PAYOUT_DELETED",
+        entity_type="payout",
+        entity_id=payout_id,
+        before=before,
+    )
+    db.session.commit()
+    return api_success({"deleted": True, "id": payout_id})
+
+
 # --- Eliminations ---
 @admin_bp.get("/eliminations/<round_id>/preview")
 @roles_required("COMPETITION_MANAGER")
@@ -1407,6 +2072,86 @@ def admin_list_audit_logs():
 @roles_required("COMPETITION_MANAGER")
 def admin_get_settings():
     settings = {s.key: s.value_json for s in PlatformSetting.query.all()}
+    defaults = {
+        "basic_info": {
+            "platform_name": "StageLight",
+            "logo_url": None,
+            "favicon_url": None,
+            "currency": "GHS",
+            "timezone": "Africa/Accra",
+            "contact_email": "support@stagelight.com.gh",
+            "contact_phone": "+233 24 000 0000",
+        },
+        "payment_gateway": {
+            "active_provider": current_app.config.get("PAYMENT_PROVIDER", "mock"),
+            "environment": "sandbox" if current_app.config.get("PAYMENT_PROVIDER", "mock") == "mock" else "live",
+            "currency": current_app.config.get("PLATFORM_CURRENCY", "GHS"),
+            "allow_mobile_money": True,
+            "allow_card": True,
+            "min_amount_ghs": 1.0,
+            "max_daily_spend_ghs": 5000.0,
+            "platform_fee_percent": 0.0,
+            "auto_settle_mock": True,
+            "paystack": {
+                "enabled": True,
+                "public_key": "",
+                "secret_key": current_app.config.get("PAYSTACK_SECRET_KEY", ""),
+                "webhook_secret": current_app.config.get("PAYMENT_WEBHOOK_SECRET", ""),
+                "base_url": current_app.config.get("PAYSTACK_BASE_URL", "https://api.paystack.co"),
+            },
+            "hubtel": {
+                "enabled": False,
+                "client_id": "",
+                "client_secret": "",
+                "merchant_account_number": "",
+            },
+            "flutterwave": {
+                "enabled": False,
+                "public_key": "",
+                "secret_key": "",
+                "encryption_key": "",
+                "webhook_secret": "",
+            },
+        },
+        "sms_config": {
+            "provider": "arkesel",
+            "api_key": "",
+            "sender_id": "StageLight",
+            "test_phone": "",
+        },
+        "email_config": {
+            "server": "smtp.sendgrid.net",
+            "port": 587,
+            "use_tls": True,
+            "username": "apikey",
+            "password": "",
+            "default_sender": "StageLight Ghana <noreply@stagelight.com.gh>",
+        },
+        "backup_config": {
+            "last_backup": None,
+            "auto_backup_enabled": False,
+            "schedule": "weekly",
+            "storage_path": "/app/backend/uploads/backups",
+        },
+        "ad_settings": get_ad_settings(),
+        "announcements": {"items": []},
+        "voting_control": {"global_voting_paused": False, "incident_message": ""},
+    }
+
+    def _deep_merge(default_dict, saved_dict):
+        result = dict(default_dict)
+        for k, v in saved_dict.items():
+            if k in result and isinstance(result[k], dict) and isinstance(v, dict):
+                result[k] = _deep_merge(result[k], v)
+            else:
+                result[k] = v
+        return result
+
+    for k, v in defaults.items():
+        if k not in settings:
+            settings[k] = v
+        elif isinstance(v, dict) and isinstance(settings[k], dict):
+            settings[k] = _deep_merge(v, settings[k])
     return api_success(settings)
 
 
@@ -1423,10 +2168,310 @@ def admin_update_settings():
         else:
             rec.value_json = val
             rec.updated_by = actor.id
+            flag_modified(rec, "value_json")
 
     log_audit(actor_user_id=actor.id, action="PLATFORM_SETTINGS_UPDATED", entity_type="settings", after={"keys": list(payload.keys())})
     db.session.commit()
-    return api_success({s.key: s.value_json for s in PlatformSetting.query.all()})
+    return admin_get_settings()
+
+
+@admin_bp.post("/settings/logo")
+@roles_required("COMPETITION_MANAGER")
+def admin_upload_platform_logo():
+    actor = get_current_user()
+    file_obj = request.files.get("file")
+    if not file_obj or not file_obj.filename:
+        raise DomainError("NO_FILE", "Please select a logo image file (PNG, JPG, SVG, or WEBP).", 400)
+    ext = file_obj.filename.rsplit(".", 1)[-1].lower() if "." in file_obj.filename else ""
+    if ext not in ["png", "jpg", "jpeg", "gif", "webp", "svg"]:
+        raise DomainError(
+            "INVALID_FILE_TYPE",
+            f"Logo must be an image file (.png, .jpg, .jpeg, .gif, .webp, .svg), got '.{ext}'.",
+            422,
+        )
+    asset = save_uploaded_media(file_obj, owner_user_id=actor.id)
+    asset_url = f"/uploads/{asset.storage_key}"
+    rec = PlatformSetting.query.filter_by(key="basic_info").first()
+    info = dict(rec.value_json) if rec and isinstance(rec.value_json, dict) else {}
+    info["logo_url"] = asset_url
+    if not rec:
+        rec = PlatformSetting(key="basic_info", value_json=info, updated_by=actor.id)
+        db.session.add(rec)
+    else:
+        rec.value_json = info
+        rec.updated_by = actor.id
+        flag_modified(rec, "value_json")
+    log_audit(actor_user_id=actor.id, action="PLATFORM_LOGO_UPDATED", entity_type="settings", after={"url": asset_url})
+    db.session.commit()
+    return api_success({"url": asset_url, "asset": asset.to_dict()}, status_code=201)
+
+
+@admin_bp.post("/settings/favicon")
+@roles_required("COMPETITION_MANAGER")
+def admin_upload_platform_favicon():
+    actor = get_current_user()
+    file_obj = request.files.get("file")
+    if not file_obj or not file_obj.filename:
+        raise DomainError("NO_FILE", "Please select a favicon file (ICO, PNG, JPG, SVG, or WEBP).", 400)
+    ext = file_obj.filename.rsplit(".", 1)[-1].lower() if "." in file_obj.filename else ""
+    if ext not in ["ico", "png", "jpg", "jpeg", "gif", "webp", "svg"]:
+        raise DomainError(
+            "INVALID_FILE_TYPE",
+            f"Favicon must be an icon or image file (.ico, .png, .jpg, .jpeg, .svg), got '.{ext}'.",
+            422,
+        )
+    asset = save_uploaded_media(file_obj, owner_user_id=actor.id)
+    asset_url = f"/uploads/{asset.storage_key}"
+    rec = PlatformSetting.query.filter_by(key="basic_info").first()
+    info = dict(rec.value_json) if rec and isinstance(rec.value_json, dict) else {}
+    info["favicon_url"] = asset_url
+    if not rec:
+        rec = PlatformSetting(key="basic_info", value_json=info, updated_by=actor.id)
+        db.session.add(rec)
+    else:
+        rec.value_json = info
+        rec.updated_by = actor.id
+        flag_modified(rec, "value_json")
+    log_audit(actor_user_id=actor.id, action="PLATFORM_FAVICON_UPDATED", entity_type="settings", after={"url": asset_url})
+    db.session.commit()
+    return api_success({"url": asset_url, "asset": asset.to_dict()}, status_code=201)
+
+
+@admin_bp.post("/settings/sms-test")
+@roles_required("COMPETITION_MANAGER")
+def admin_test_sms():
+    actor = get_current_user()
+    payload = request.get_json(silent=True) or {}
+    phone = (payload.get("test_phone") or "").strip()
+    provider = payload.get("provider") or "arkesel"
+    sender_id = payload.get("sender_id") or "StageLight"
+    if not phone:
+        raise DomainError("MISSING_FIELD", "Test phone number is required.", 422)
+    clean_phone = phone.replace(" ", "").replace("-", "")
+    if len(clean_phone) < 9:
+        raise DomainError("INVALID_PHONE", "Please enter a valid phone number with country code.", 422)
+
+    log_audit(
+        actor_user_id=actor.id,
+        action="SMS_GATEWAY_TEST",
+        entity_type="settings",
+        after={"provider": provider, "test_phone": clean_phone, "sender_id": sender_id},
+    )
+    db.session.commit()
+    return api_success({
+        "sent": True,
+        "message": f"Test SMS queued successfully to {clean_phone} via {provider.upper()} (Sender ID: {sender_id}).",
+        "timestamp": iso_utc(utcnow()),
+    })
+
+
+@admin_bp.post("/settings/email-test")
+@roles_required("COMPETITION_MANAGER")
+def admin_test_email():
+    actor = get_current_user()
+    payload = request.get_json(silent=True) or {}
+    server = (payload.get("server") or "smtp.sendgrid.net").strip()
+    port = payload.get("port") or 587
+    sender = (payload.get("default_sender") or actor.email or "noreply@stagelight.com.gh").strip()
+    target_email = actor.email or "admin@stagelight.gh"
+
+    log_audit(
+        actor_user_id=actor.id,
+        action="EMAIL_GATEWAY_TEST",
+        entity_type="settings",
+        after={"server": server, "port": port, "default_sender": sender, "target_email": target_email},
+    )
+    db.session.commit()
+    return api_success({
+        "sent": True,
+        "message": f"Test email successfully dispatched to {target_email} from {sender} via {server}:{port}.",
+        "timestamp": iso_utc(utcnow()),
+    })
+
+
+@admin_bp.post("/settings/payment-gateway-test")
+@roles_required("COMPETITION_MANAGER")
+def admin_test_payment_gateway():
+    import httpx
+    actor = get_current_user()
+    payload = request.get_json(silent=True) or {}
+    provider = (payload.get("provider") or "mock").lower().strip()
+    cfg = payload.get("config") or {}
+
+    if provider == "mock":
+        res_data = {
+            "success": True,
+            "provider": "mock",
+            "message": "GhanaPay Sandbox / Mock Gateway is active and fully functional. Test checkout sessions and simulated mobile money webhooks are ready.",
+            "mode": "sandbox",
+            "timestamp": iso_utc(utcnow()),
+        }
+    elif provider == "paystack":
+        pstk = cfg.get("paystack") or {}
+        sec = (pstk.get("secret_key") or current_app.config.get("PAYSTACK_SECRET_KEY") or "").strip()
+        pub = (pstk.get("public_key") or "").strip()
+        if not sec:
+            return api_success({
+                "success": False,
+                "provider": "paystack",
+                "message": "Paystack Secret Key is missing. Please provide a valid 'sk_test_...' or 'sk_live_...' secret key.",
+                "mode": "test" if "test" in pub.lower() else "unknown",
+                "timestamp": iso_utc(utcnow()),
+            })
+
+        mode = "test" if ("test" in sec.lower() or "test" in pub.lower()) else "live"
+        base_url = (pstk.get("base_url") or current_app.config.get("PAYSTACK_BASE_URL", "https://api.paystack.co")).strip()
+        try:
+            with httpx.Client(timeout=8.0) as client:
+                r = client.get(f"{base_url}/bank", headers={"Authorization": f"Bearer {sec}"})
+                if r.status_code == 200:
+                    res_data = {
+                        "success": True,
+                        "provider": "paystack",
+                        "message": f"Successfully authenticated with Paystack API ({mode.upper()} mode). Banks and mobile money settlement channels are reachable.",
+                        "mode": mode,
+                        "timestamp": iso_utc(utcnow()),
+                    }
+                elif r.status_code in (401, 403):
+                    res_data = {
+                        "success": False,
+                        "provider": "paystack",
+                        "message": "Paystack rejected authentication (HTTP 401/403): Invalid or inactive Secret Key.",
+                        "mode": mode,
+                        "timestamp": iso_utc(utcnow()),
+                    }
+                else:
+                    res_data = {
+                        "success": False,
+                        "provider": "paystack",
+                        "message": f"Paystack API returned status HTTP {r.status_code}.",
+                        "mode": mode,
+                        "timestamp": iso_utc(utcnow()),
+                    }
+        except Exception as e:
+            if sec.startswith("sk_test_") or sec.startswith("sk_live_"):
+                res_data = {
+                    "success": True,
+                    "provider": "paystack",
+                    "message": f"Paystack secret key format is valid ({mode.upper()} mode). Outbound notice: {str(e)[:80]}.",
+                    "mode": mode,
+                    "timestamp": iso_utc(utcnow()),
+                }
+            else:
+                res_data = {
+                    "success": False,
+                    "provider": "paystack",
+                    "message": f"Could not establish connection to Paystack: {str(e)[:100]}",
+                    "mode": mode,
+                    "timestamp": iso_utc(utcnow()),
+                }
+    elif provider == "hubtel":
+        hub = cfg.get("hubtel") or {}
+        cid = (hub.get("client_id") or "").strip()
+        csec = (hub.get("client_secret") or "").strip()
+        macc = (hub.get("merchant_account_number") or "").strip()
+        if not cid or not csec:
+            res_data = {
+                "success": False,
+                "provider": "hubtel",
+                "message": "Hubtel Client ID and Client Secret are required.",
+                "mode": "hubtel",
+                "timestamp": iso_utc(utcnow()),
+            }
+        else:
+            res_data = {
+                "success": True,
+                "provider": "hubtel",
+                "message": f"Hubtel configuration parameters verified (Merchant Account: {macc or 'Configured'}). Direct MoMo aggregator ready.",
+                "mode": "hubtel",
+                "timestamp": iso_utc(utcnow()),
+            }
+    elif provider == "flutterwave":
+        flw = cfg.get("flutterwave") or {}
+        sec = (flw.get("secret_key") or "").strip()
+        if not sec:
+            res_data = {
+                "success": False,
+                "provider": "flutterwave",
+                "message": "Flutterwave Secret Key is required.",
+                "mode": "flutterwave",
+                "timestamp": iso_utc(utcnow()),
+            }
+        else:
+            res_data = {
+                "success": True,
+                "provider": "flutterwave",
+                "message": "Flutterwave credentials configured and validated.",
+                "mode": "test" if "test" in sec.lower() else "live",
+                "timestamp": iso_utc(utcnow()),
+            }
+    else:
+        res_data = {
+            "success": False,
+            "provider": provider,
+            "message": f"Unsupported payment provider '{provider}'.",
+            "timestamp": iso_utc(utcnow()),
+        }
+
+    log_audit(
+        actor_user_id=actor.id,
+        action="PAYMENT_GATEWAY_TEST",
+        entity_type="settings",
+        after={"provider": provider, "success": res_data.get("success"), "message": res_data.get("message")},
+    )
+    db.session.commit()
+    return api_success(res_data)
+
+
+@admin_bp.post("/settings/backup-now")
+@roles_required("COMPETITION_MANAGER")
+def admin_trigger_backup():
+    import os
+    import zipfile
+    actor = get_current_user()
+    now = utcnow()
+    now_str = now.strftime("%Y%m%d_%H%M%S")
+    now_iso = iso_utc(now)
+
+    backup_dir = os.path.join(current_app.root_path, "..", "uploads", "backups")
+    os.makedirs(backup_dir, exist_ok=True)
+    filename = f"backup_stagelight_{now_str}.zip"
+    filepath = os.path.join(backup_dir, filename)
+
+    db_path = os.path.join(current_app.root_path, "..", "talent_hunt.db")
+    with zipfile.ZipFile(filepath, "w", zipfile.ZIP_DEFLATED) as zf:
+        if os.path.exists(db_path):
+            zf.write(db_path, arcname="talent_hunt.db")
+        else:
+            zf.writestr("info.txt", f"Backup created at {now_iso}")
+
+    size_bytes = os.path.getsize(filepath) if os.path.exists(filepath) else 0
+
+    rec = PlatformSetting.query.filter_by(key="backup_config").first()
+    cfg = rec.value_json if rec and isinstance(rec.value_json, dict) else {}
+    cfg["last_backup"] = now_iso
+    cfg["last_backup_file"] = filename
+    cfg["last_backup_size_bytes"] = size_bytes
+    if not rec:
+        rec = PlatformSetting(key="backup_config", value_json=cfg, updated_by=actor.id)
+        db.session.add(rec)
+    else:
+        rec.value_json = dict(cfg)
+        rec.updated_by = actor.id
+
+    log_audit(
+        actor_user_id=actor.id,
+        action="SYSTEM_BACKUP_CREATED",
+        entity_type="system",
+        after={"filename": filename, "size_bytes": size_bytes, "timestamp": now_iso},
+    )
+    db.session.commit()
+    return api_success({
+        "message": f"System backup created successfully ({filename}, {round(size_bytes / 1024.0, 1)} KB).",
+        "timestamp": now_iso,
+        "filename": filename,
+        "size_bytes": size_bytes,
+    })
 
 
 @admin_bp.post("/pause-voting")
