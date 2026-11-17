@@ -2,7 +2,7 @@ from app.extensions import db
 from app.utils.security import new_uuid
 from app.utils.time_utils import iso_utc, utcnow
 
-ORG_KINDS = {"SPONSOR", "PARTNER"}
+ORG_KINDS = {"SPONSOR", "PARTNER", "SUPPORTER"}
 ORG_STATUSES = {"DRAFT", "ACTIVE", "ARCHIVED"}
 INQUIRY_STATUSES = {"NEW", "UNDER_REVIEW", "CONTACTED", "APPROVED", "DECLINED"}
 
@@ -195,7 +195,7 @@ DEFAULT_COLLABORATION_TRACKS = [
 
 
 def resolve_tier_or_category_meta(kind: str, code: str) -> dict:
-    if kind == "SPONSOR":
+    if kind in ("SPONSOR", "SUPPORTER"):
         return SPONSOR_TIERS.get(code, {"code": code, "label": code.replace("_", " ").title(), "rank": 99})
     return PARTNER_CATEGORIES.get(
         code,
@@ -262,7 +262,7 @@ class SponsorPartner(db.Model):
 
     def to_public_dict(self) -> dict:
         meta = resolve_tier_or_category_meta(self.kind, self.tier_or_category)
-        profile_prefix = "/sponsors" if self.kind == "SPONSOR" else "/partners"
+        profile_prefix = "/sponsors" if self.kind in ("SPONSOR", "SUPPORTER") else "/partners"
         comp = self.competition
         has_public_comp = bool(comp and comp.status not in ("DRAFT", "ARCHIVED"))
         return {

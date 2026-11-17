@@ -103,6 +103,7 @@ def public_home():
     featured_partners = query_public_orgs("PARTNER", featured_only=True)
     if not featured_partners:
         featured_partners = query_public_orgs("PARTNER")
+    featured_supporters = query_public_orgs("SUPPORTER")
 
     return api_success(
         {
@@ -114,6 +115,7 @@ def public_home():
             "featured_nominees": featured_nominees,
             "featured_sponsors": [s.to_public_dict() for s in featured_sponsors[:6]],
             "featured_partners": [p.to_public_dict() for p in featured_partners[:6]],
+            "featured_supporters": [sup.to_public_dict() for sup in featured_supporters[:6]],
             "leaderboard": leaderboard,
             "announcements": announcements,
             "ad_settings": get_ad_settings(),

@@ -60,7 +60,7 @@
         var vm = this;
         vm.perms = PermissionsService;
         var initialTab = ($location.search() || {}).tab;
-        vm.activeTab = (initialTab === 'partners' || initialTab === 'inquiries') ? initialTab : 'sponsors';
+        vm.activeTab = (initialTab === 'partners' || initialTab === 'inquiries' || initialTab === 'supporters') ? initialTab : 'sponsors';
 
         vm.loading = false;
         vm.orgs = [];
@@ -73,6 +73,8 @@
           active_sponsors: 0,
           total_partners: 0,
           active_partners: 0,
+          total_supporters: 0,
+          active_supporters: 0,
           open_inquiries: 0,
           new_inquiries: 0
         };
@@ -108,18 +110,20 @@
         });
 
         function currentKind() {
+          if (vm.activeTab === 'supporters') return 'SUPPORTER';
           return vm.activeTab === 'partners' ? 'PARTNER' : 'SPONSOR';
         }
 
         function defaultForm(kind) {
           var isSp = kind === 'SPONSOR';
+          var isSup = kind === 'SUPPORTER';
           return {
             kind: kind,
             name: '',
-            tier_or_category: isSp ? 'GOLD' : 'BROADCAST_MEDIA',
+            tier_or_category: isSup ? 'SUPPORTING' : (isSp ? 'GOLD' : 'BROADCAST_MEDIA'),
             status: 'ACTIVE',
             competition_id: '',
-            badge_label: '',
+            badge_label: isSup ? 'Official Backstage & Regional Supporter' : '',
             tagline: '',
             contribution_summary: '',
             description: '',
@@ -132,10 +136,10 @@
             uploaded_logo_url: null,
             uploaded_logo_name: null,
             brand_initials: '',
-            accent_color: isSp ? '#d97706' : '#059669',
+            accent_color: isSup ? '#c2410c' : (isSp ? '#d97706' : '#059669'),
             location: '',
             since_year: 2026,
-            sort_order: 100,
+            sort_order: isSup ? 70 : 100,
             is_featured: false,
             contact_name: '',
             contact_email: '',
@@ -146,10 +150,19 @@
 
         vm.tierOrCategoryOptions = function (kind) {
           var k = kind || currentKind();
+          if (k === 'SUPPORTER') {
+            return vm.taxonomy.sponsor_tiers.filter(function (t) { return t.code === 'SUPPORTING' || t.code === 'SILVER'; });
+          }
           return k === 'SPONSOR' ? vm.taxonomy.sponsor_tiers : vm.taxonomy.partner_categories;
         };
 
         vm.onFormKindChange = function () {
+          if (vm.form.kind === 'SUPPORTER') {
+            vm.form.tier_or_category = 'SUPPORTING';
+            if (!vm.form.accent_color || vm.form.accent_color === '#d97706') vm.form.accent_color = '#c2410c';
+            if (!vm.form.badge_label) vm.form.badge_label = 'Official Backstage & Regional Supporter';
+            return;
+          }
           var opts = vm.tierOrCategoryOptions(vm.form.kind);
           var valid = opts.some(function (o) { return o.code === vm.form.tier_or_category; });
           if (!valid && opts.length) {
@@ -326,11 +339,11 @@
 
           req.then(function (res) {
             vm.savingForm = false;
-            var label = res.data.kind === 'SPONSOR' ? 'Sponsor' : 'Partner';
+            var label = res.data.kind === 'SUPPORTER' ? 'Supporter' : (res.data.kind === 'SPONSOR' ? 'Sponsor' : 'Partner');
             ToastService.success(label + (vm.editingId ? ' updated.' : ' added to directory.'));
             vm.showForm = false;
             vm.editingId = null;
-            vm.activeTab = res.data.kind === 'SPONSOR' ? 'sponsors' : 'partners';
+            vm.activeTab = res.data.kind === 'SUPPORTER' ? 'supporters' : (res.data.kind === 'SPONSOR' ? 'sponsors' : 'partners');
             vm.loadOrgs();
           }, function (err) {
             vm.savingForm = false;
@@ -408,8 +421,8 @@
         '  <div>',
         '    <div class="flex-between mb-2" style="flex-wrap:wrap;gap:10px;">',
         '      <div>',
-        '        <h1 style="margin:0;font-size:1.5rem;">Sponsors, Partners &amp; Inquiries</h1>',
-        '        <p class="muted" style="margin:2px 0 0;font-size:0.88rem;">Manage public brand profiles, sponsorship tiers, homepage placement, and incoming brand inquiries.</p>',
+        '        <h1 style="margin:0;font-size:1.5rem;">Sponsors, Partners &amp; Supporters</h1>',
+        '        <p class="muted" style="margin:2px 0 0;font-size:0.88rem;">Manage public brand profiles, sponsorship tiers, partner pillars, backstage supporters, homepage placement, and incoming brand inquiries.</p>',
         '      </div>',
         '      <div class="inline-actions">',
         '        <a href="/sponsors" target="_blank" class="btn btn-sm btn-secondary"><span>/sponsors</span><th-icon name="external-link" size="13"></th-icon></a>',
@@ -417,15 +430,16 @@
         '        <button type="button" class="btn btn-sm btn-secondary" ng-click="vm.refreshCurrent()"><th-icon name="refresh" size="14"></th-icon><span>Refresh</span></button>',
         '        <button type="button" class="btn btn-sm btn-primary" ng-if="vm.perms.canManageCompetition() && vm.activeTab !== \'inquiries\'" ng-click="vm.showForm ? vm.cancelForm() : vm.openCreate()">',
         '          <th-icon name="{{ vm.showForm ? \'x\' : \'plus\' }}" size="14"></th-icon>',
-        '          <span>{{ vm.showForm ? "Close Form" : (vm.activeTab === "sponsors" ? "Add Sponsor" : "Add Partner") }}</span>',
+        '          <span>{{ vm.showForm ? "Close Form" : (vm.activeTab === "sponsors" ? "Add Sponsor" : (vm.activeTab === "supporters" ? "Add Supporter" : "Add Partner")) }}</span>',
         '        </button>',
         '      </div>',
         '    </div>',
 
         '    <!-- KPI SUMMARY ROW -->',
-        '    <div class="grid-3 mb-3">',
+        '    <div class="grid-4 mb-3">',
         '      <div class="kpi-card"><div class="kpi-label">Official Sponsors</div><div class="kpi-value">{{ vm.summary.active_sponsors }}</div><div class="kpi-sub">{{ vm.summary.total_sponsors }} total in directory</div></div>',
         '      <div class="kpi-card"><div class="kpi-label">Strategic Partners</div><div class="kpi-value">{{ vm.summary.active_partners }}</div><div class="kpi-sub">{{ vm.summary.total_partners }} total across 6 pillars</div></div>',
+        '      <div class="kpi-card"><div class="kpi-label">Official Supporters</div><div class="kpi-value">{{ vm.summary.active_supporters || 0 }}</div><div class="kpi-sub">{{ vm.summary.total_supporters || 0 }} regional &amp; backstage champions</div></div>',
         '      <div class="kpi-card"><div class="kpi-label">Open Brand Inquiries</div><div class="kpi-value">{{ vm.summary.open_inquiries }}</div><div class="kpi-sub">{{ vm.summary.new_inquiries }} awaiting first review</div></div>',
         '    </div>',
 
@@ -436,6 +450,9 @@
         '      </button>',
         '      <button type="button" role="tab" class="sp-admin-tab" ng-class="{active: vm.activeTab === \'partners\'}" ng-click="vm.switchTab(\'partners\')">',
         '        <th-icon name="handshake" size="15"></th-icon><span>Partners ({{ vm.summary.total_partners }})</span>',
+        '      </button>',
+        '      <button type="button" role="tab" class="sp-admin-tab" ng-class="{active: vm.activeTab === \'supporters\'}" ng-click="vm.switchTab(\'supporters\')">',
+        '        <th-icon name="heart" size="15"></th-icon><span>Supporters ({{ vm.summary.total_supporters || 0 }})</span>',
         '      </button>',
         '      <button type="button" role="tab" class="sp-admin-tab" ng-class="{active: vm.activeTab === \'inquiries\'}" ng-click="vm.switchTab(\'inquiries\')">',
         '        <th-icon name="mail" size="15"></th-icon><span>Inquiries</span>',
@@ -449,7 +466,7 @@
         '        <div class="sp-org-card-top" style="margin:0;">',
         '          <th-brand-mark org="vm.form" size="md"></th-brand-mark>',
         '          <div>',
-        '            <h3 style="margin:0;">{{ vm.editingId ? "Edit " + vm.form.name : "Add New " + (vm.form.kind === "SPONSOR" ? "Sponsor" : "Partner") }}</h3>',
+        '            <h3 style="margin:0;">{{ vm.editingId ? "Edit " + vm.form.name : "Add New " + (vm.form.kind === "SUPPORTER" ? "Supporter" : (vm.form.kind === "SPONSOR" ? "Sponsor" : "Partner")) }}</h3>',
         '            <span class="muted" style="font-size:0.82rem;">Live brand mark preview &bull; Published immediately when status is ACTIVE</span>',
         '          </div>',
         '        </div>',
@@ -462,9 +479,10 @@
         '          <select class="form-control" ng-model="vm.form.kind" ng-change="vm.onFormKindChange()">',
         '            <option value="SPONSOR">Sponsor (/sponsors)</option>',
         '            <option value="PARTNER">Partner (/partners)</option>',
+        '            <option value="SUPPORTER">Supporter / Backstage Champion (/sponsors)</option>',
         '          </select>',
         '        </div>',
-        '        <div class="form-group"><label class="form-label">{{ vm.form.kind === "SPONSOR" ? "Sponsorship Tier *" : "Partner Category *" }}</label>',
+        '        <div class="form-group"><label class="form-label">{{ vm.form.kind === "PARTNER" ? "Partner Category *" : (vm.form.kind === "SUPPORTER" ? "Supporter Tier *" : "Sponsorship Tier *") }}</label>',
         '          <select class="form-control" ng-model="vm.form.tier_or_category" required>',
         '            <option ng-repeat="opt in vm.tierOrCategoryOptions(vm.form.kind)" value="{{ opt.code }}">{{ opt.label }}</option>',
         '          </select>',
@@ -552,7 +570,7 @@
         '    <div ng-if="vm.activeTab !== \'inquiries\'">',
         '      <div class="filter-bar">',
         '        <div class="filter-bar-top">',
-        '          <span class="filter-bar-title"><th-icon name="filter" size="14"></th-icon><span>Filter {{ vm.activeTab === "sponsors" ? "Sponsors" : "Partners" }}</span></span>',
+        '          <span class="filter-bar-title"><th-icon name="filter" size="14"></th-icon><span>Filter {{ vm.activeTab === "sponsors" ? "Sponsors" : (vm.activeTab === "supporters" ? "Supporters" : "Partners") }}</span></span>',
         '          <div class="inline-actions">',
         '            <span class="filter-count-pill">{{ vm.orgs.length }} record(s)</span>',
         '            <button type="button" class="btn btn-sm btn-secondary" ng-if="vm.activeOrgFilterCount() > 0" ng-click="vm.resetOrgFilters()"><th-icon name="rotate-ccw" size="14"></th-icon><span>Reset</span></button>',
@@ -567,7 +585,7 @@
         '            </div>',
         '          </div>',
         '          <div class="filter-field">',
-        '            <label class="filter-label">{{ vm.activeTab === "sponsors" ? "Tier" : "Category" }}</label>',
+        '            <label class="filter-label">{{ vm.activeTab === "partners" ? "Category" : "Tier" }}</label>',
         '            <select class="form-control form-control-sm" ng-model="vm.orgFilters.tier_or_category" ng-change="vm.loadOrgs()">',
         '              <option value="">All</option>',
         '              <option ng-repeat="opt in vm.tierOrCategoryOptions()" value="{{ opt.code }}">{{ opt.label }}</option>',
@@ -605,7 +623,7 @@
         '          <thead>',
         '            <tr>',
         '              <th dt-sort="org.name">Organization</th>',
-        '              <th dt-sort="org.tier_or_category_label"><span ng-bind="vm.activeTab === \'sponsors\' ? \'Tier\' : \'Category\'"></span></th>',
+        '              <th dt-sort="org.tier_or_category_label"><span ng-bind="vm.activeTab === \'partners\' ? \'Category\' : \'Tier\'"></span></th>',
         '              <th dt-sort="org.competition_title || \'Platform-Wide\'">Scope</th>',
         '              <th dt-sort="org.is_featured">Homepage</th>',
         '              <th dt-sort="org.sort_order">Order</th>',
@@ -626,7 +644,7 @@
         '                </div>',
         '              </td>',
         '              <td>',
-        '                <span ng-if="org.kind === \'SPONSOR\'" class="sp-tier-pill sp-tier-pill-sm" ng-class="\'sp-tier-\' + (org.tier_or_category | lowercase)">{{ org.tier_or_category_label }}</span>',
+        '                <span ng-if="org.kind === \'SPONSOR\' || org.kind === \'SUPPORTER\'" class="sp-tier-pill sp-tier-pill-sm" ng-class="\'sp-tier-\' + (org.tier_or_category | lowercase)">{{ org.tier_or_category_label }}</span>',
         '                <span ng-if="org.kind === \'PARTNER\'" class="sp-partner-cat-badge">{{ org.tier_or_category_label }}</span>',
         '              </td>',
         '              <td style="font-size:0.83rem;">{{ org.competition_title || "Platform-Wide" }}</td>',

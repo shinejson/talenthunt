@@ -2,7 +2,7 @@ import csv
 import io
 from datetime import timedelta
 from flask import Blueprint, Response, request
-from sqlalchemy import func, or_
+from sqlalchemy import and_, func, or_
 
 from app.extensions import db
 from app.models.application import Application, Submission
@@ -123,6 +123,14 @@ def admin_dashboard():
     open_tickets = SupportTicket.query.filter(SupportTicket.status.in_(["OPEN", "IN_PROGRESS"])).count()
     active_sponsors_count = SponsorPartner.query.filter_by(kind="SPONSOR", status="ACTIVE").count()
     active_partners_count = SponsorPartner.query.filter_by(kind="PARTNER", status="ACTIVE").count()
+    active_supporters_count = SponsorPartner.query.filter(
+        SponsorPartner.status == "ACTIVE",
+        or_(
+            SponsorPartner.kind == "SUPPORTER",
+            and_(SponsorPartner.kind == "SPONSOR", SponsorPartner.tier_or_category == "SUPPORTING"),
+            SponsorPartner.badge_label.ilike("%supporter%"),
+        ),
+    ).count()
     open_inquiries_count = PartnershipInquiry.query.filter(
         PartnershipInquiry.status.in_(["NEW", "UNDER_REVIEW", "CONTACTED"])
     ).count()
@@ -166,11 +174,19 @@ def admin_dashboard():
                 "active_rounds_count": len(active_rounds),
                 "active_sponsors": active_sponsors_count,
                 "active_partners": active_partners_count,
+                "active_supporters": active_supporters_count,
                 "open_partnership_inquiries": open_inquiries_count,
             },
             "incident_banner": get_incident_banner(),
             "active_rounds": [r.to_dict() for r in active_rounds],
             "competitions": [c.to_dict(include_details=False) for c in competitions],
+            "sponsors_partners_summary": [
+                org.to_admin_dict()
+                for org in SponsorPartner.query.filter_by(status="ACTIVE")
+                .order_by(SponsorPartner.is_featured.desc(), SponsorPartner.created_at.desc())
+                .limit(8)
+                .all()
+            ],
             "recent_audit_logs": [a.to_dict() for a in recent_audits],
         }
     )
@@ -1463,7 +1479,15 @@ def admin_list_sponsors_partners():
     q = SponsorPartner.query
 
     kind = (request.args.get("kind") or "").strip().upper()
-    if kind:
+    if kind == "SUPPORTER":
+        q = q.filter(
+            or_(
+                SponsorPartner.kind == "SUPPORTER",
+                and_(SponsorPartner.kind == "SPONSOR", SponsorPartner.tier_or_category == "SUPPORTING"),
+                SponsorPartner.badge_label.ilike("%supporter%"),
+            )
+        )
+    elif kind:
         q = q.filter_by(kind=kind)
 
     tier_or_cat = (request.args.get("tier_or_category") or "").strip().upper()
@@ -1501,11 +1525,29 @@ def admin_list_sponsors_partners():
         )
 
     records = sort_public_orgs(q.all())
+    total_supporters = SponsorPartner.query.filter(
+        or_(
+            SponsorPartner.kind == "SUPPORTER",
+            and_(SponsorPartner.kind == "SPONSOR", SponsorPartner.tier_or_category == "SUPPORTING"),
+            SponsorPartner.badge_label.ilike("%supporter%"),
+        )
+    ).count()
+    active_supporters = SponsorPartner.query.filter(
+        SponsorPartner.status == "ACTIVE",
+        or_(
+            SponsorPartner.kind == "SUPPORTER",
+            and_(SponsorPartner.kind == "SPONSOR", SponsorPartner.tier_or_category == "SUPPORTING"),
+            SponsorPartner.badge_label.ilike("%supporter%"),
+        ),
+    ).count()
+
     summary = {
         "total_sponsors": SponsorPartner.query.filter_by(kind="SPONSOR").count(),
         "active_sponsors": SponsorPartner.query.filter_by(kind="SPONSOR", status="ACTIVE").count(),
         "total_partners": SponsorPartner.query.filter_by(kind="PARTNER").count(),
         "active_partners": SponsorPartner.query.filter_by(kind="PARTNER", status="ACTIVE").count(),
+        "total_supporters": total_supporters,
+        "active_supporters": active_supporters,
         "open_inquiries": PartnershipInquiry.query.filter(
             PartnershipInquiry.status.in_(["NEW", "UNDER_REVIEW", "CONTACTED"])
         ).count(),

@@ -1,7 +1,7 @@
 import re
 from urllib.parse import urlparse
 
-from sqlalchemy import or_
+from sqlalchemy import and_, or_
 
 from app.extensions import db
 from app.models.application import MediaAsset
@@ -64,7 +64,7 @@ def validate_logo_url(raw_url: str | None) -> str | None:
 
 
 def validate_accent_color(raw_color: str | None, kind: str = "SPONSOR") -> str:
-    default = "#d97706" if kind == "SPONSOR" else "#059669"
+    default = "#c2410c" if kind == "SUPPORTER" else ("#d97706" if kind == "SPONSOR" else "#059669")
     if not raw_color:
         return default
     cleaned = str(raw_color).strip()
@@ -98,15 +98,15 @@ def validate_tier_or_category(kind: str, code: str | None, required: bool = True
     cleaned = (str(code).strip().upper() if code is not None else "")
     if not cleaned:
         if required:
-            label = "sponsorship tier" if kind == "SPONSOR" else "partner category"
+            label = "sponsorship tier" if kind in ("SPONSOR", "SUPPORTER") else "partner category"
             raise DomainError("VALIDATION_ERROR", f"A valid {label} is required.", 422)
         return None
-    valid_map = SPONSOR_TIERS if kind == "SPONSOR" else PARTNER_CATEGORIES
+    valid_map = SPONSOR_TIERS if kind in ("SPONSOR", "SUPPORTER") else PARTNER_CATEGORIES
     if cleaned not in valid_map:
         allowed = ", ".join(valid_map.keys())
         raise DomainError(
             "VALIDATION_ERROR",
-            f"Invalid {'tier' if kind == 'SPONSOR' else 'category'} '{cleaned}'. Allowed values: {allowed}.",
+            f"Invalid {'tier' if kind in ('SPONSOR', 'SUPPORTER') else 'category'} '{cleaned}'. Allowed values: {allowed}.",
             422,
             {"tier_or_category": [f"Choose one of: {allowed}."]},
         )
@@ -169,8 +169,19 @@ def query_public_orgs(
     include_platform_wide: bool = True,
 ) -> list[SponsorPartner]:
     kind_up = kind.upper()
+    if kind_up == "SUPPORTER":
+        kind_filter = or_(
+            SponsorPartner.kind == "SUPPORTER",
+            and_(SponsorPartner.kind == "SPONSOR", SponsorPartner.tier_or_category == "SUPPORTING"),
+            SponsorPartner.badge_label.ilike("%supporter%"),
+        )
+    elif kind_up == "SPONSOR":
+        kind_filter = SponsorPartner.kind.in_(["SPONSOR", "SUPPORTER"])
+    else:
+        kind_filter = SponsorPartner.kind == kind_up
+
     q = SponsorPartner.query.outerjoin(Competition, SponsorPartner.competition_id == Competition.id).filter(
-        SponsorPartner.kind == kind_up,
+        kind_filter,
         SponsorPartner.status == "ACTIVE",
         or_(
             SponsorPartner.competition_id.is_(None),
@@ -227,7 +238,7 @@ def get_collaboration_tracks() -> list[dict]:
 def create_sponsor_or_partner(actor: User, payload: dict) -> SponsorPartner:
     kind = str(payload.get("kind") or "SPONSOR").strip().upper()
     if kind not in ORG_KINDS:
-        raise DomainError("VALIDATION_ERROR", "kind must be SPONSOR or PARTNER.", 422)
+        raise DomainError("VALIDATION_ERROR", f"kind must be one of: {', '.join(sorted(ORG_KINDS))}.", 422)
 
     name = str(payload.get("name") or "").strip()
     if len(name) < 2 or len(name) > 160:
@@ -315,7 +326,7 @@ def update_sponsor_or_partner(actor: User, org: SponsorPartner, payload: dict) -
     if "kind" in payload and payload["kind"] is not None:
         candidate_kind = str(payload["kind"]).strip().upper()
         if candidate_kind not in ORG_KINDS:
-            raise DomainError("VALIDATION_ERROR", "kind must be SPONSOR or PARTNER.", 422)
+            raise DomainError("VALIDATION_ERROR", f"kind must be one of: {', '.join(sorted(ORG_KINDS))}.", 422)
         new_kind = candidate_kind
 
     if new_kind != org.kind or "tier_or_category" in payload:

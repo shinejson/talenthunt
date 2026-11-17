@@ -9,7 +9,7 @@
     { path: '/admin/eliminations', label: 'Eliminations', icon: 'target', section: 'Competition Setup' },
     { path: '/admin/submissions', label: 'Review Queue', icon: 'clipboard-check', section: 'Talent & Trust' },
     { path: '/admin/nominees', label: 'Nominees', icon: 'award', section: 'Talent & Trust' },
-    { path: '/admin/sponsors-partners', label: 'Sponsors & Partners', icon: 'handshake', section: 'Talent & Trust' },
+    { path: '/admin/sponsors-partners', label: 'Sponsors, Partners & Supporters', icon: 'handshake', section: 'Talent & Trust', keywords: 'sponsors partners supporters supporting brands inquiries' },
     { path: '/admin/moderation', label: 'Moderation & Support', icon: 'shield-alert', section: 'Talent & Trust' },
     { path: '/admin/votes', label: 'Vote Ledger', icon: 'book-ledger', section: 'Finance & Ledger' },
     { path: '/admin/orders', label: 'Orders', icon: 'receipt', section: 'Finance & Ledger' },
@@ -252,7 +252,8 @@
             vm.filteredNav = ADMIN_PAGES.filter(function (item) {
               return item.label.toLowerCase().indexOf(q) !== -1 ||
                      item.section.toLowerCase().indexOf(q) !== -1 ||
-                     item.path.toLowerCase().indexOf(q) !== -1;
+                     item.path.toLowerCase().indexOf(q) !== -1 ||
+                     (item.keywords && item.keywords.toLowerCase().indexOf(q) !== -1);
             });
           };
 
