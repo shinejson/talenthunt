@@ -61,6 +61,13 @@ class User(db.Model):
     status = db.Column(db.String(30), nullable=False, default="ACTIVE", index=True)
     location = db.Column(db.String(150), nullable=True)
     bio = db.Column(db.Text, nullable=True)
+    date_of_birth = db.Column(db.Date, nullable=True)
+    profile_image_id = db.Column(
+        db.String(36), db.ForeignKey("media_assets.id", ondelete="SET NULL"), nullable=True, index=True
+    )
+    is_group = db.Column(db.Boolean, nullable=False, default=False)
+    group_name = db.Column(db.String(150), nullable=True)
+    group_member_count = db.Column(db.Integer, nullable=True)
     last_login_at = db.Column(db.DateTime, nullable=True)
     created_at = db.Column(db.DateTime, nullable=False, default=utcnow)
     updated_at = db.Column(db.DateTime, nullable=False, default=utcnow, onupdate=utcnow)
@@ -71,6 +78,7 @@ class User(db.Model):
         cascade="all, delete-orphan",
         lazy="selectin",
     )
+    profile_image = db.relationship("MediaAsset", foreign_keys=[profile_image_id], lazy="joined")
 
     @property
     def role_names(self) -> list[str]:
@@ -89,6 +97,11 @@ class User(db.Model):
             "roles": self.role_names,
             "location": self.location,
             "bio": self.bio,
+            "date_of_birth": self.date_of_birth.isoformat() if self.date_of_birth else None,
+            "profile_image": self.profile_image.to_dict() if self.profile_image else None,
+            "is_group": self.is_group,
+            "group_name": self.group_name,
+            "group_member_count": self.group_member_count,
             "created_at": iso_utc(self.created_at),
         }
         if include_private:

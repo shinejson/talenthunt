@@ -1,6 +1,9 @@
+from datetime import date
+
 from flask import Blueprint, current_app, request
 
 from app.extensions import db, limiter
+from app.integrations.storage.local_storage import save_uploaded_profile_image
 from app.policies.rbac import compute_user_permissions, get_current_user, login_required
 from app.schemas import DomainError
 from app.services.audit_service import log_audit
@@ -15,6 +18,7 @@ from app.services.auth_service import (
     verify_user_contact,
 )
 from app.utils.responses import api_success
+from app.utils.time_utils import utcnow
 
 auth_bp = Blueprint("auth", __name__, url_prefix="/auth")
 
@@ -125,6 +129,62 @@ def update_profile():
         user.location = (payload.get("location") or "").strip() or None
     if "bio" in payload:
         user.bio = (payload.get("bio") or "").strip() or None
+    if "date_of_birth" in payload:
+        raw_dob = payload.get("date_of_birth")
+        if raw_dob:
+            try:
+                parsed = date.fromisoformat(str(raw_dob).strip())
+            except ValueError:
+                raise DomainError(
+                    "VALIDATION_ERROR",
+                    "Date of birth must be a valid date (YYYY-MM-DD).",
+                    422,
+                    {"date_of_birth": ["Enter a valid date in YYYY-MM-DD format."]},
+                )
+            if parsed > utcnow().date():
+                raise DomainError(
+                    "VALIDATION_ERROR",
+                    "Date of birth cannot be in the future.",
+                    422,
+                    {"date_of_birth": ["Date of birth cannot be in the future."]},
+                )
+            user.date_of_birth = parsed
+        else:
+            user.date_of_birth = None
+    if "is_group" in payload:
+        user.is_group = bool(payload.get("is_group"))
+    if "group_name" in payload:
+        user.group_name = (payload.get("group_name") or "").strip() or None
+    if "group_member_count" in payload:
+        raw_count = payload.get("group_member_count")
+        if raw_count is not None:
+            try:
+                count = int(raw_count)
+            except (TypeError, ValueError):
+                raise DomainError(
+                    "VALIDATION_ERROR",
+                    "Group member count must be a positive whole number.",
+                    422,
+                    {"group_member_count": ["Enter a whole number of 1 or more."]},
+                )
+            if count < 1:
+                raise DomainError(
+                    "VALIDATION_ERROR",
+                    "Group member count must be at least 1.",
+                    422,
+                    {"group_member_count": ["Enter a whole number of 1 or more."]},
+                )
+            user.group_member_count = count
+        else:
+            user.group_member_count = None
+
+    if user.is_group and not user.group_name:
+        raise DomainError(
+            "VALIDATION_ERROR",
+            "Group name is required when applying as a group.",
+            422,
+            {"group_name": ["Group name is required when applying as a group."]},
+        )
 
     log_audit(
         actor_user_id=user.id,
@@ -136,6 +196,28 @@ def update_profile():
     )
     db.session.commit()
     return api_success({"user": user.to_dict(include_private=True)})
+
+
+@auth_bp.post("/profile-image")
+@login_required
+@limiter.limit("10 per minute")
+def upload_profile_image():
+    user = get_current_user()
+    file_obj = request.files.get("file")
+    asset = save_uploaded_profile_image(file_obj, user.id)
+    user.profile_image_id = asset.id
+    log_audit(
+        actor_user_id=user.id,
+        action="USER_PROFILE_IMAGE_UPDATED",
+        entity_type="user",
+        entity_id=user.id,
+        after={"media_asset_id": asset.id, "mime_type": asset.mime_type, "size_bytes": asset.size_bytes},
+    )
+    db.session.commit()
+    return api_success(
+        {"user": user.to_dict(include_private=True), "profile_image": asset.to_dict()},
+        status_code=201,
+    )
 
 
 @auth_bp.post("/change-password")

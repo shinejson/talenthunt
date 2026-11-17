@@ -93,6 +93,10 @@ class Nominee(db.Model):
             "currency": self.competition.currency if self.competition else "GHS",
             "category_id": self.category_id,
             "category_name": self.category.name if self.category else None,
+            "profile_image": self.user.profile_image.to_dict() if self.user and self.user.profile_image else None,
+            "is_group": self.user.is_group if self.user else False,
+            "group_name": self.user.group_name if self.user else None,
+            "group_member_count": self.user.group_member_count if self.user else None,
             "nominated_at": iso_utc(self.nominated_at),
             "demo": {
                 "title": sub_dict["title"] if sub_dict else None,
