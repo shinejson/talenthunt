@@ -55,6 +55,7 @@ class Application(db.Model):
     contact_phone = db.Column(db.String(40), nullable=True)
     location = db.Column(db.String(150), nullable=True)
     is_minor = db.Column(db.Boolean, nullable=False, default=False)
+    genre = db.Column(db.String(100), nullable=True)
     guardian_name = db.Column(db.String(150), nullable=True)
     guardian_contact = db.Column(db.String(100), nullable=True)
     guardian_consent = db.Column(db.Boolean, nullable=False, default=False)
@@ -104,6 +105,7 @@ class Application(db.Model):
             "category_name": self.category.name if self.category else None,
             "location": self.location,
             "is_minor": self.is_minor,
+            "genre": self.genre,
             "guardian_consent": self.guardian_consent,
             "status": self.status,
             "applicant_feedback": self.applicant_feedback,

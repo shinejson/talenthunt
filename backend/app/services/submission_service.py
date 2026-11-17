@@ -112,6 +112,7 @@ def create_application(user: User, raw_payload: dict) -> Application:
         contact_email=(data.get("contact_email") or "").strip() or user.email,
         contact_phone=(data.get("contact_phone") or "").strip() or user.phone,
         location=(data.get("location") or "").strip() or user.location,
+        genre=(data.get("genre") or "").strip() or None,
         is_minor=bool(data.get("is_minor")),
         guardian_name=(data.get("guardian_name") or "").strip() or None,
         guardian_contact=(data.get("guardian_contact") or "").strip() or None,
