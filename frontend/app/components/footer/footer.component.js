@@ -70,6 +70,8 @@
         '          <li><a href="/nominees">Meet the Nominees</a></li>',
         '          <li><a href="/results">Published Results</a></li>',
         '          <li><a href="/how-it-works">How It Works</a></li>',
+        '          <li><a href="/apply">Apply to Perform</a></li>',
+        '          <li><a href="/track-application">Track Application</a></li>',
         '        </ul>',
         '      </div>',
         '      <div>',

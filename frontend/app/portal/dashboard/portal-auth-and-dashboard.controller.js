@@ -22,7 +22,7 @@
         '  <div class="side-nav-body">',
         '    <a href="/portal/dashboard" ng-click="$ctrl.drawerOpen=false" ng-class="{active: $ctrl.is(\'/portal/dashboard\')}"><th-icon name="dashboard" size="17"></th-icon><span>Overview</span></a>',
         '    <a href="/portal/submissions" ng-click="$ctrl.drawerOpen=false" ng-class="{active: $ctrl.is(\'/portal/submissions\')}"><th-icon name="folder" size="17"></th-icon><span>My Applications</span></a>',
-        '    <a href="/portal/submissions/new" ng-click="$ctrl.drawerOpen=false" ng-class="{active: $ctrl.is(\'/portal/submissions/new\')}"><th-icon name="plus-circle" size="17"></th-icon><span>Submit Demo</span></a>',
+        '    <a href="/apply" ng-click="$ctrl.drawerOpen=false"><th-icon name="plus-circle" size="17"></th-icon><span>Submit Demo</span></a>',
         '    <a ng-if="$ctrl.perms.isNominee()" href="/portal/voting" ng-click="$ctrl.drawerOpen=false" ng-class="{active: $ctrl.is(\'/portal/voting\')}"><th-icon name="qr-code" size="17"></th-icon><span>Nominee Votes &amp; QR</span></a>',
         '    <a href="/portal/profile" ng-click="$ctrl.drawerOpen=false" ng-class="{active: $ctrl.is(\'/portal/profile\')}"><th-icon name="user" size="17"></th-icon><span>Profile</span></a>',
         '    <a href="/portal/notifications" ng-click="$ctrl.drawerOpen=false" ng-class="{active: $ctrl.is(\'/portal/notifications\')}"><th-icon name="bell" size="17"></th-icon><span>Notifications</span></a>',
@@ -106,7 +106,6 @@
           var NAV_MAP = {
             '/portal/dashboard': { label: 'Overview', icon: 'dashboard' },
             '/portal/submissions': { label: 'My Applications', icon: 'folder' },
-            '/portal/submissions/new': { label: 'Submit Demo', icon: 'plus-circle' },
             '/portal/voting': { label: 'Nominee Votes & QR', icon: 'qr-code' },
             '/portal/profile': { label: 'Profile', icon: 'user' },
             '/portal/notifications': { label: 'Notifications', icon: 'bell' },
@@ -161,8 +160,8 @@
           };
         }]
     })
-    .controller('PortalLoginController', ['$location', 'AuthService', 'PermissionsService', 'ToastService',
-      function ($location, AuthService, PermissionsService, ToastService) {
+    .controller('PortalLoginController', ['$location', 'AuthService', 'PermissionsService', 'ToastService', 'ApiService',
+      function ($location, AuthService, PermissionsService, ToastService, ApiService) {
         var vm = this;
         vm.identifier = '';
         vm.password = '';
@@ -172,6 +171,7 @@
         vm.loading = false;
         vm.error = null;
         vm.reasonNotice = null;
+        vm.invitationAccepted = $location.search().invitation === 'accepted';
 
         var reason = $location.search().reason;
         if (reason === 'inactivity') {
@@ -180,6 +180,7 @@
           vm.reasonNotice = 'Your session was terminated from another device or signed out. Please sign in again.';
         }
 
+        ApiService.get('/public/info').then(function (res) { vm.showDemoAccounts = res.data.demo_accounts_enabled; });
         vm.demoAccounts = [
           { label: 'Nominee (Ama Gold)', email: 'ama@stagelight.gh', pass: 'Nominee@2026!' },
           { label: 'Applicant (Benaiah)', email: 'applicant@stagelight.gh', pass: 'Applicant@2026!' },
@@ -205,7 +206,7 @@
           var isSuperAdmin = roles.indexOf('SUPER_ADMIN') !== -1;
           var isAdminRole = isSuperAdmin || PermissionsService.canAccessAdmin();
 
-          if (nextUrl && nextUrl !== '/portal/login' && nextUrl !== '/portal/register') {
+          if (nextUrl && nextUrl !== '/portal/login') {
             $location.path(nextUrl).search({});
           } else if (isAdminRole) {
             $location.path('/admin').search({});
@@ -254,28 +255,26 @@
         };
       }
     ])
-    .controller('PortalRegisterController', ['$location', 'AuthService', 'ToastService',
-      function ($location, AuthService, ToastService) {
-        var vm = this;
-        vm.form = { full_name: '', email: '', phone: '', location: '', password: '' };
-        vm.loading = false;
-        vm.error = null;
-
-        vm.submit = function () {
-          vm.loading = true;
-          vm.error = null;
-          AuthService.register(vm.form).then(function (data) {
-            vm.loading = false;
-            var extra = data.verification_code_preview ? (' (Sandbox verification code: ' + data.verification_code_preview + ')') : '';
-            ToastService.success('Account created!' + extra);
-            $location.path('/portal/dashboard');
-          }, function (err) {
-            vm.loading = false;
-            vm.error = err.message || 'Registration failed.';
-          });
-        };
-      }
-    ])
+    .controller('PortalInvitationController', ['$location', 'ApiService', function ($location, ApiService) {
+      var vm = this;
+      var token = $location.hash();
+      vm.validLink = /^[a-f0-9]{64}$/.test(token);
+      vm.accept = function () {
+        if (vm.loading || !vm.validLink) return;
+        if (vm.password !== vm.confirm) {
+          vm.error = 'The two passwords do not match.';
+          return;
+        }
+        vm.loading = true;
+        vm.error = '';
+        ApiService.post('/auth/accept-invitation', { token: token, password: vm.password }).then(function () {
+          $location.path('/portal/login').search({ invitation: 'accepted' }).hash('').replace();
+        }, function (err) {
+          vm.error = err.message;
+          if (err.code === 'INVALID_INVITATION') vm.validLink = false;
+        }).finally(function () { vm.loading = false; });
+      };
+    }])
     .controller('PortalForgotPasswordController', ['ApiService', 'ToastService', '$location',
       function (ApiService, ToastService, $location) {
         var vm = this;
@@ -283,15 +282,10 @@
         vm.resetToken = '';
         vm.newPassword = '';
         vm.step = 1;
-        vm.previewToken = null;
 
         vm.requestReset = function () {
           ApiService.post('/auth/forgot-password', { identifier: vm.identifier }).then(function (res) {
             ToastService.info(res.data.message);
-            if (res.data.reset_token_preview) {
-              vm.previewToken = res.data.reset_token_preview;
-              vm.resetToken = res.data.reset_token_preview;
-            }
             vm.step = 2;
           }, function (err) { ToastService.error(err.message); });
         };
@@ -331,24 +325,28 @@
         '      <th-icon name="shield" size="18"></th-icon>',
         '      <span>{{ vm.reasonNotice }}</span>',
         '    </div>',
+        '    <div ng-if="vm.invitationAccepted" class="alert alert-success" role="status">Password set. Sign in with the email address in your nomination message.</div>',
         '    <!-- Step 1: Credentials Form -->',
         '    <div ng-if="vm.step === 1">',
         '      <h1 style="margin:0 0 6px;font-size:1.6rem;">Sign In to StageLight</h1>',
-        '      <p class="muted">Access your Applicant Portal, Nominee Voting Dashboard, or Admin Console.</p>',
+        '      <p class="muted">Sign in to your nominee portal or the staff console. If you were just nominated, first use the link in your invitation email to set a password.</p>',
         '      <div ng-if="vm.error" class="alert alert-danger">{{ vm.error }}</div>',
         '      <form ng-submit="vm.submit()">',
-        '        <div class="form-group"><label class="form-label">Email, Phone Number or Username</label><input type="text" class="form-control" ng-model="vm.identifier" required placeholder="admin@stagelight.gh, superadmin, ama@..." /></div>',
-        '        <div class="form-group"><label class="form-label">Password</label><input type="password" class="form-control" ng-model="vm.password" required /></div>',
+        '        <div class="form-group"><label class="form-label">Email address or phone number</label><input type="text" class="form-control" ng-model="vm.identifier" required autocomplete="username" /></div>',
+        '        <div class="form-group"><label class="form-label">Password</label><input type="password" class="form-control" ng-model="vm.password" ng-trim="false" autocomplete="current-password" required /></div>',
         '        <button type="submit" class="btn btn-lg btn-primary btn-block" ng-disabled="vm.loading">{{ vm.loading ? "Signing in..." : "Sign In" }}</button>',
         '      </form>',
         '      <div class="flex-between mt-2" style="font-size:0.9rem;">',
-        '        <a href="/portal/register">Create an account</a>',
+        '        <a href="/track-application">Track an application</a>',
         '        <a href="/portal/forgot-password">Forgot password?</a>',
         '      </div>',
+        '      <p class="muted mt-1">New to StageLight? <a href="/apply">Apply without an account</a>.</p>',
+        '      <div ng-if="vm.showDemoAccounts">',
         '      <hr style="border:none;border-top:1px solid var(--border);margin:18px 0;" />',
         '      <div style="font-size:0.82rem;font-weight:700;color:var(--text-muted);text-transform:uppercase;">Quick Demo Role Accounts (Click to Autofill)</div>',
         '      <div class="demo-pill-grid">',
         '        <button type="button" class="demo-pill" ng-repeat="d in vm.demoAccounts" ng-click="vm.fillDemo(d)">{{ d.label }}</button>',
+        '      </div>',
         '      </div>',
         '    </div>',
         '    <!-- Step 2: Two-Factor Verification Challenge -->',
@@ -383,27 +381,6 @@
         '</div>'
       ].join(''));
 
-      $templateCache.put('portal/register.html', [
-        '<div class="container mt-3 mb-3" style="max-width:540px;">',
-        '  <div class="card">',
-        '    <h1 style="margin:0 0 6px;font-size:1.6rem;">Create Your StageLight Account</h1>',
-        '    <p class="muted">Register to submit your talent demo and track your competition journey.</p>',
-        '    <div ng-if="vm.error" class="alert alert-danger">{{ vm.error }}</div>',
-        '    <form ng-submit="vm.submit()">',
-        '      <div class="form-group"><label class="form-label">Full Name *</label><input type="text" class="form-control" ng-model="vm.form.full_name" required /></div>',
-        '      <div class="grid-2">',
-        '        <div class="form-group"><label class="form-label">Email Address</label><input type="email" class="form-control" ng-model="vm.form.email" placeholder="you@example.com" /></div>',
-        '        <div class="form-group"><label class="form-label">Phone Number</label><input type="tel" class="form-control" ng-model="vm.form.phone" placeholder="+23324..." /></div>',
-        '      </div>',
-        '      <div class="form-group"><label class="form-label">City / Region (Optional)</label><input type="text" class="form-control" ng-model="vm.form.location" placeholder="Accra, Greater Accra" /></div>',
-        '      <div class="form-group"><label class="form-label">Password * (min 8 characters)</label><input type="password" class="form-control" ng-model="vm.form.password" minlength="8" required /></div>',
-        '      <button type="submit" class="btn btn-lg btn-primary btn-block" ng-disabled="vm.loading">{{ vm.loading ? "Creating Account..." : "Register &amp; Continue" }}</button>',
-        '    </form>',
-        '    <p class="text-center mt-2" style="font-size:0.9rem;">Already registered? <a href="/portal/login">Sign in here</a></p>',
-        '  </div>',
-        '</div>'
-      ].join(''));
-
       $templateCache.put('portal/forgot-password.html', [
         '<div class="container mt-3 mb-3" style="max-width:500px;">',
         '  <div class="card">',
@@ -413,7 +390,7 @@
         '      <button type="submit" class="btn btn-primary btn-block">Send Reset Code</button>',
         '    </form>',
         '    <form ng-if="vm.step === 2" ng-submit="vm.completeReset()">',
-        '      <div ng-if="vm.previewToken" class="alert alert-info">Sandbox Reset Token: <code>{{ vm.previewToken }}</code></div>',
+        '      <p class="muted">Enter the reset code sent to your account. If you were recently nominated, use the link in your nomination email instead.</p>',
         '      <div class="form-group"><label class="form-label">Reset Token</label><input type="text" class="form-control" ng-model="vm.resetToken" required /></div>',
         '      <div class="form-group"><label class="form-label">New Password (min 8 characters)</label><input type="password" class="form-control" ng-model="vm.newPassword" minlength="8" required /></div>',
         '      <button type="submit" class="btn btn-primary btn-block">Set New Password</button>',
@@ -431,7 +408,7 @@
         '        <div><h1 style="margin:0 0 4px;font-size:1.5rem;">Hello, {{ vm.auth.state.user.full_name }}</h1><span class="muted">Roles: {{ vm.auth.state.user.roles.join(", ") }}</span></div>',
         '        <div class="inline-actions">',
         '          <a ng-if="vm.perms.isNominee()" href="/portal/voting" class="btn btn-primary">Open Nominee Voting Dashboard</a>',
-        '          <a href="/portal/submissions/new" class="btn btn-secondary">Submit Talent Demo</a>',
+        '          <a href="/apply" class="btn btn-secondary">Submit Talent Demo</a>',
         '        </div>',
         '      </div>',
         '      <div class="alert alert-warning mt-2" ng-if="!vm.auth.state.user.is_verified">',
@@ -445,7 +422,7 @@
         '    </div>',
         '    <div class="card">',
         '      <div class="flex-between mb-2"><h3 style="margin:0;">Recent Applications</h3><a href="/portal/submissions" class="btn btn-sm btn-secondary">View All</a></div>',
-        '      <div ng-if="!vm.applications.length" class="empty-state">You have not submitted a talent demo yet. <a href="/portal/submissions/new">Submit your demo now!</a></div>',
+        '      <div ng-if="!vm.applications.length" class="empty-state">You have not submitted a talent demo yet. <a href="/apply">Submit your demo now!</a></div>',
         '      <div class="table-responsive" ng-if="vm.applications.length">',
         '        <table class="data-table" th-datatable dt-data="vm.applications" dt-row="a" dt-page-length="5">',
         '          <thead><tr><th dt-sort="a.reference_no">Reference</th><th dt-sort="a.competition_title">Competition / Category</th><th dt-sort="a.latest_submission.title">Demo Title</th><th dt-sort="a.status">Status</th><th>Action</th></tr></thead>',

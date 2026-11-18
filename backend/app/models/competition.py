@@ -13,6 +13,8 @@ COMPETITION_STATUSES = {
     "ARCHIVED",
 }
 
+APPLICATION_ENTRY_STATUSES = ("APPLICATIONS_OPEN", "PUBLISHED", "VOTING")
+
 ROUND_STATUSES = {
     "DRAFT",
     "SCHEDULED",
@@ -70,6 +72,14 @@ class Competition(db.Model):
         lazy="selectin",
     )
 
+    def accepts_applications(self, now=None):
+        now = now or utcnow()
+        return (
+            self.status in APPLICATION_ENTRY_STATUSES
+            and (not self.applications_open_at or self.applications_open_at <= now)
+            and (not self.applications_close_at or now <= self.applications_close_at)
+        )
+
     def to_dict(self, include_details: bool = False):
         data = {
             "id": self.id,
@@ -78,6 +88,7 @@ class Competition(db.Model):
             "tagline": self.tagline,
             "description": self.description,
             "status": self.status,
+            "accepts_applications": self.accepts_applications(),
             "applications_open_at": iso_utc(self.applications_open_at),
             "applications_close_at": iso_utc(self.applications_close_at),
             "starts_at": iso_utc(self.starts_at),

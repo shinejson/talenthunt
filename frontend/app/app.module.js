@@ -3,7 +3,7 @@
 
   var AUTH_ONLY_PORTAL_PATHS = {
     '/portal/login': true,
-    '/portal/register': true,
+    '/portal/accept-invitation': true,
     '/portal/forgot-password': true
   };
 

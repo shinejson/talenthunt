@@ -14,10 +14,10 @@ Implementation of the **Talent Hunt Platform PRD & Technical Design (`design.md`
    - Responsive mobile-first landing page (360px+ viewport support), active competition spotlight, featured categories, searchable/filterable nominee directory (`/nominees`), public nominee demo profiles (`/nominee/:slug`), official sponsors directory & tier packages (`/sponsors`, `/sponsors/:slug`), strategic & ecosystem partners directory (`/partners`, `/partners/:slug`) with partnership inquiry submissions, published round results & leaderboards (`/results`), FAQ, competition rules, terms, privacy, and support ticket submission (`/contact`).
 2. **Authentication & Role-Based Access Control (RBAC):**
    - Roles enforced server-side: `VISITOR`, `APPLICANT`, `NOMINEE`, `REVIEWER`, `MODERATOR`, `COMPETITION_MANAGER`, `FINANCE_OFFICER`, `SUPER_ADMIN`.
-   - Registration, login, contact verification, password recovery, session revocation on password change, and account deactivation.
+   - Invitation-only contestant accounts, login, contact verification, password recovery, session revocation on password change, and account deactivation.
 3. **Demo Submission, Review & Nomination:**
-   - Upload validation (allowlisted media extensions, size limits, executable/malware signature rejection) or approved hosted video/audio URLs, plus minor guardian-consent enforcement.
-   - Reviewer scorecards & private internal notes; Competition Manager decisions (`APPROVE`, `REQUEST_CHANGES`, `REJECT`, `NOMINATE`) generating cryptographically random unique nominee and round-specific voting links.
+   - Public applications with detailed contact and act information, optional photo, up to two demos, and guardian consent where required. Track an application with its code and email; no applicant account is created on submission.
+   - Private audition files, reviewer scorecards and notes, and Competition Manager decisions. Nomination provisions portal access, emails a one-time password setup link, and generates the nominee and round-specific voting links.
 4. **Payment Provider Adapter & Immutable Vote Ledger:**
    - Pluggable payment adapters (`MockPaymentAdapter` GhanaPay Sandbox + `PaystackPaymentAdapter`).
    - Server-calculated pricing in integer minor units (GHS pesewas).
@@ -76,7 +76,34 @@ PORT=5050 PYTHONPATH=backend .venv/bin/python backend/wsgi.py
 | **Finance Officer** | `finance@stagelight.gh` | `Finance@2026!` |
 | **Moderator** | `moderator@stagelight.gh` | `Moderator@2026!` |
 | **Nominee (Ama Gold)** | `ama@stagelight.gh` | `Nominee@2026!` |
-| **Applicant (Benaiah)** | `applicant@stagelight.gh` | `Applicant@2026!` |
+| **Legacy applicant (Benaiah)** | `applicant@stagelight.gh` | `Applicant@2026!` |
+
+---
+
+## Applications, tracking, and portal invitations
+
+1. Applicants visit `/apply`, select an open competition and category, and enter their contact and talent details. They can attach a photo (up to 5 MiB) and two videos (MP4, MOV, or WebM, up to 40 MiB each). An approved hosted link can replace the first demo. The site displays a tracking code when the submission is saved.
+2. At `/track-application`, applicants enter the code and the email they applied with. The result shows status and feedback meant for the applicant, not internal reviews or audition files.
+3. In **Admin → Review Queue**, staff search by tracking code or name. A reviewer or manager records a scorecard. A Competition Manager or Super Admin can then nominate the contestant.
+4. Nomination sends the sign-in email address and a one-time password setup link (valid for 48 hours) to a new nominee. Existing verified contestant accounts keep their passwords. The Review Queue shows when the nomination email was sent and lets managers resend it if delivery fails or the link expires. A successful resend for an invited user replaces their previous link.
+
+The audition photo and demos uploaded through the public application are available to the review team and, after sign-in, the nominee. They are not published on the public nominee profile. Existing accounts and applications remain available in the portal; public account registration is disabled.
+
+### Upgrading an existing database
+
+Back up your database and uploads first. Stop running instances during the migration. With `DATABASE_URL` pointing to your existing database, run this from the repository root before starting the updated app:
+
+```bash
+AUTO_SEED_DEMO=false .venv/bin/flask --app backend/wsgi.py db upgrade --directory backend/migrations
+```
+
+With Docker Compose, build the new image, then run `docker compose run --rm web flask --app wsgi:app db upgrade` before bringing the app back up. New local databases include the latest schema automatically. In production, route `/uploads/` through Flask (as in `nginx.conf`) so private audition files aren't served directly by the web server.
+
+### Email setup
+
+Set `PUBLIC_BASE_URL` to the public HTTPS URL nominees should open. Set `MAIL_SERVER`, `MAIL_PORT`, `MAIL_DEFAULT_SENDER`, and, if required by your SMTP provider, `MAIL_USERNAME` and `MAIL_PASSWORD`. Use `MAIL_USE_TLS=true` for STARTTLS (usually port 587) or `MAIL_USE_SSL=true` for implicit TLS (usually port 465). See `.env.example`. Configure these as deployment environment variables; don't commit credentials.
+
+Without working SMTP settings, the nomination is saved but the browser reports that email was not sent. Once SMTP is configured, use **Send nomination email** in the Review Queue. Local tests simulate SMTP so they never deliver real mail.
 
 ---
 

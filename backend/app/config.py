@@ -17,7 +17,7 @@ class Config:
         "pool_recycle": int(os.environ.get("DB_POOL_RECYCLE", "300")),
     }
     JSON_SORT_KEYS = False
-    MAX_CONTENT_LENGTH = 50 * 1024 * 1024
+    MAX_CONTENT_LENGTH = 90 * 1024 * 1024  # Two 40 MiB videos, a 5 MiB photo, and form data.
     UPLOAD_FOLDER = os.environ.get(
         "UPLOAD_FOLDER",
         os.path.join(BASE_DIR, "uploads"),
@@ -42,6 +42,14 @@ class Config:
     PLATFORM_CURRENCY = os.environ.get("PLATFORM_CURRENCY", "GHS")
     DEFAULT_TIMEZONE = os.environ.get("DEFAULT_TIMEZONE", "Africa/Accra")
     FRONTEND_ORIGIN = os.environ.get("FRONTEND_ORIGIN", "*")
+    PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", "http://localhost:5050")
+    MAIL_SERVER = os.environ.get("MAIL_SERVER", "")
+    MAIL_PORT = int(os.environ.get("MAIL_PORT", "587"))
+    MAIL_USE_TLS = os.environ.get("MAIL_USE_TLS", "true").lower() == "true"
+    MAIL_USE_SSL = os.environ.get("MAIL_USE_SSL", "false").lower() == "true"
+    MAIL_USERNAME = os.environ.get("MAIL_USERNAME", "")
+    MAIL_PASSWORD = os.environ.get("MAIL_PASSWORD", "")
+    MAIL_DEFAULT_SENDER = os.environ.get("MAIL_DEFAULT_SENDER", "")
     TOKEN_EXPIRE_HOURS = int(os.environ.get("TOKEN_EXPIRE_HOURS", "72"))
     AUTO_SEED_DEMO = os.environ.get("AUTO_SEED_DEMO", "true").lower() == "true"
 
@@ -52,6 +60,7 @@ class StagingConfig(Config):
 
 
 class ProductionConfig(Config):
+    PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", "")
     SESSION_COOKIE_SECURE = True
     AUTO_SEED_DEMO = False
     RATELIMIT_STORAGE_URI = os.environ.get("RATELIMIT_STORAGE_URI", os.environ.get("REDIS_URL", "memory://"))

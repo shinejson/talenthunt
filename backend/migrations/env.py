@@ -16,13 +16,7 @@ logger = logging.getLogger('alembic.env')
 
 
 def get_engine():
-    try:
-        # this works with Flask-SQLAlchemy<3 and Alchemical
-        return current_app.extensions['migrate'].db.get_engine()
-    except (TypeError, AttributeError):
-        # this works with Flask-SQLAlchemy>=3
-        return current_app.extensions['migrate'].db.engine
-
+    return current_app.extensions['migrate'].db.engine
 
 def get_engine_url():
     try:
@@ -97,14 +91,31 @@ def run_migrations_online():
     connectable = get_engine()
 
     with connectable.connect() as connection:
-        context.configure(
-            connection=connection,
-            target_metadata=get_metadata(),
-            **conf_args
-        )
-
-        with context.begin_transaction():
-            context.run_migrations()
+        # SQLite batch migrations recreate tables. With enforcement on, dropping the old
+        # table can cascade into other tables (or fail on an incoming FK). Only disable
+        # it for this migration connection and check integrity before committing.
+        sqlite = connection.dialect.name == "sqlite"
+        if sqlite:
+            connection.exec_driver_sql("PRAGMA foreign_keys=OFF")
+            connection.commit()
+            connection.exec_driver_sql("BEGIN IMMEDIATE")
+        try:
+            context.configure(
+                connection=connection,
+                target_metadata=get_metadata(),
+                **conf_args
+            )
+            with context.begin_transaction():
+                context.run_migrations()
+            if sqlite:
+                if connection.exec_driver_sql("PRAGMA foreign_key_check").first():
+                    raise RuntimeError("Foreign key violation after database migration.")
+                connection.commit()
+        finally:
+            if sqlite:
+                connection.rollback()
+                connection.exec_driver_sql("PRAGMA foreign_keys=ON")
+                connection.commit()
 
 
 if context.is_offline_mode():

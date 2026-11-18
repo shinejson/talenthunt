@@ -32,6 +32,13 @@
         delete: function (path) {
           return unwrap($http.delete(BASE + path));
         },
+        postForm: function (path, formData, onProgress) {
+          return unwrap($http.post(BASE + path, formData, {
+            transformRequest: angular.identity,
+            headers: { 'Content-Type': undefined },
+            uploadEventHandlers: onProgress ? { progress: onProgress } : undefined
+          }));
+        },
         upload: function (path, fileObj) {
           var fd = new FormData();
           fd.append('file', fileObj);

@@ -24,26 +24,24 @@ def _is_sqlite():
 
 
 def upgrade():
-    op.add_column("users", sa.Column("date_of_birth", sa.Date(), nullable=True))
-    op.add_column("users", sa.Column("profile_image_id", sa.String(length=36), nullable=True))
-    op.add_column("users", sa.Column("is_group", sa.Boolean(), nullable=False, server_default=sa.false()))
-    op.add_column("users", sa.Column("group_name", sa.String(length=150), nullable=True))
-    op.add_column("users", sa.Column("group_member_count", sa.Integer(), nullable=True))
-    op.create_index(INDEX_NAME, "users", ["profile_image_id"], unique=False)
-    # SQLite does not support adding constraints to existing tables; the FK is
-    # created natively by `db.create_all()` on fresh/local databases. PostgreSQL
-    # (production) supports ALTER TABLE ... ADD CONSTRAINT.
-    if not _is_sqlite():
-        op.create_foreign_key(
-            FK_NAME,
-            "users",
-            "media_assets",
-            ["profile_image_id"],
-            ["id"],
-            ondelete="SET NULL",
-        )
-
-    op.add_column("applications", sa.Column("genre", sa.String(length=100), nullable=True))
+    # Older deployments created schema from the models without an Alembic revision.
+    inspector = sa.inspect(op.get_bind())
+    user_columns = {c["name"] for c in inspector.get_columns("users")}
+    for column in (
+        sa.Column("date_of_birth", sa.Date(), nullable=True),
+        sa.Column("profile_image_id", sa.String(length=36), nullable=True),
+        sa.Column("is_group", sa.Boolean(), nullable=False, server_default=sa.false()),
+        sa.Column("group_name", sa.String(length=150), nullable=True),
+        sa.Column("group_member_count", sa.Integer(), nullable=True),
+    ):
+        if column.name not in user_columns:
+            op.add_column("users", column)
+    if INDEX_NAME not in {i["name"] for i in inspector.get_indexes("users")}:
+        op.create_index(INDEX_NAME, "users", ["profile_image_id"], unique=False)
+    if not _is_sqlite() and not any(fk["constrained_columns"] == ["profile_image_id"] for fk in inspector.get_foreign_keys("users")):
+        op.create_foreign_key(FK_NAME, "users", "media_assets", ["profile_image_id"], ["id"], ondelete="SET NULL")
+    if "genre" not in {c["name"] for c in inspector.get_columns("applications")}:
+        op.add_column("applications", sa.Column("genre", sa.String(length=100), nullable=True))
 
 
 def downgrade():

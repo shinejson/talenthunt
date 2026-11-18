@@ -1,3 +1,5 @@
+import json
+
 from flask import Blueprint, request
 
 from app.extensions import db, limiter
@@ -5,10 +7,51 @@ from app.integrations.storage.local_storage import save_uploaded_media
 from app.models.application import Application
 from app.policies.rbac import get_current_user, login_required
 from app.schemas import DomainError
-from app.services.submission_service import create_application, update_or_resubmit_application
+from app.services.submission_service import (
+    create_application,
+    create_guest_application,
+    list_open_competitions,
+    track_application,
+    update_or_resubmit_application,
+)
 from app.utils.responses import api_success
 
 submissions_bp = Blueprint("submissions", __name__, url_prefix="/applications")
+
+
+@submissions_bp.get("/options")
+def application_options():
+    return api_success(list_open_competitions())
+
+
+@submissions_bp.post("/guest")
+@limiter.limit("5 per minute")
+def submit_guest_application():
+    if request.mimetype != "multipart/form-data":
+        raise DomainError("MULTIPART_REQUIRED", "Send the application and uploads as multipart form data.", 415)
+    forms = request.form.getlist("application")
+    if len(forms) != 1 or len(forms[0]) > 32_000:
+        raise DomainError("INVALID_FORM", "Application form details are missing or too large.", 422)
+    try:
+        payload = json.loads(forms[0])
+    except (ValueError, RecursionError) as exc:
+        raise DomainError("INVALID_FORM", "Application form details are not valid.", 422) from exc
+    for field in request.files:
+        if field not in {"photo", "demo_video_1", "demo_video_2"} or len(request.files.getlist(field)) != 1:
+            raise DomainError("INVALID_UPLOADS", "Upload at most one photo and two demo videos in the designated fields.", 422)
+    application = create_guest_application(payload, request.files)
+    response, status = api_success(application.to_tracking_dict(), status_code=201)
+    response.headers["Cache-Control"] = "no-store"
+    return response, status
+
+
+@submissions_bp.post("/track")
+@limiter.limit("20 per minute")
+def track_guest_application():
+    payload = request.get_json(silent=True) or {}
+    response, status = api_success(track_application(payload))
+    response.headers["Cache-Control"] = "no-store"
+    return response, status
 
 
 @submissions_bp.post("/media")

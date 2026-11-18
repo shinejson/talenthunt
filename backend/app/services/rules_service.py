@@ -126,7 +126,7 @@ DEMO_SUBMISSION_RULES = [
     {
         "title": "Technical Media Specifications",
         "icon": "video",
-        "summary": "Acceptable video formats: MP4, MOV, WEBM (minimum 720p HD resolution recommended, landscape or portrait 9:16). Acceptable audio formats: MP3, WAV. Max direct file upload size: 40 MB. Hosted video links from YouTube, Vimeo, or Google Drive are accepted."
+        "summary": "Upload up to two MP4, MOV or WebM demos, up to 40 MB each. 720p HD is recommended. A YouTube, Vimeo, SoundCloud or Audiomack link can replace the first demo. An optional applicant or group photo can be up to 5 MB."
     },
     {
         "title": "Performance Integrity & Quality",
