@@ -12,6 +12,8 @@
       $routeProvider
         // Public routes (Section 7.1)
         .when('/', { templateUrl: 'public/home.html', controller: 'HomeController', controllerAs: 'vm' })
+        .when('/apply', { templateUrl: 'app/public/applications/apply.html', controller: 'GuestApplicationController', controllerAs: 'vm' })
+        .when('/track-application', { templateUrl: 'app/public/applications/track.html', controller: 'TrackApplicationController', controllerAs: 'vm' })
         .when('/competitions', { templateUrl: 'public/competitions.html', controller: 'CompetitionsListController', controllerAs: 'vm' })
         .when('/competitions/:slug', { templateUrl: 'public/competition-detail.html', controller: 'CompetitionDetailController', controllerAs: 'vm' })
         .when('/nominees', { templateUrl: 'public/nominees.html', controller: 'NomineesDirectoryController', controllerAs: 'vm' })
@@ -35,11 +37,12 @@
 
         // Applicant & Nominee Portal (Section 7.2)
         .when('/portal/login', { templateUrl: 'portal/login.html', controller: 'PortalLoginController', controllerAs: 'vm' })
-        .when('/portal/register', { templateUrl: 'portal/register.html', controller: 'PortalRegisterController', controllerAs: 'vm' })
+        .when('/portal/register', { redirectTo: '/apply' })
+        .when('/portal/accept-invitation', { templateUrl: 'app/portal/dashboard/accept-invitation.html', controller: 'PortalInvitationController', controllerAs: 'vm' })
         .when('/portal/forgot-password', { templateUrl: 'portal/forgot-password.html', controller: 'PortalForgotPasswordController', controllerAs: 'vm' })
         .when('/portal/dashboard', { templateUrl: 'portal/dashboard.html', controller: 'PortalDashboardController', controllerAs: 'vm', requireAuth: true })
         .when('/portal/submissions', { templateUrl: 'portal/submissions.html', controller: 'PortalSubmissionsListController', controllerAs: 'vm', requireAuth: true })
-        .when('/portal/submissions/new', { templateUrl: 'portal/submission-new.html', controller: 'PortalSubmissionNewController', controllerAs: 'vm', requireAuth: true })
+        .when('/portal/submissions/new', { redirectTo: '/apply' })
         .when('/portal/submissions/:id', { templateUrl: 'portal/submission-detail.html', controller: 'PortalSubmissionDetailController', controllerAs: 'vm', requireAuth: true })
         .when('/portal/profile', { templateUrl: 'portal/profile.html', controller: 'PortalProfileController', controllerAs: 'vm', requireAuth: true })
         .when('/portal/voting', { templateUrl: 'portal/voting-dashboard.html', controller: 'NomineeVotingDashboardController', controllerAs: 'vm', requireAuth: true, requireRoles: ['NOMINEE'] })

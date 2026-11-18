@@ -1,4 +1,8 @@
 from datetime import date
+<<<<<<< HEAD
+=======
+
+>>>>>>> 565e8ea106a20c2946caeabc101b80e71a2f1eb4
 from flask import Blueprint, current_app, g, request
 
 from app.extensions import db, limiter
@@ -16,7 +20,6 @@ from app.services.auth_service import (
     logout_current_user,
     ping_session,
     regenerate_backup_codes,
-    register_user,
     resend_verification_code,
     revoke_all_other_sessions,
     revoke_user_session,
@@ -26,6 +29,7 @@ from app.services.auth_service import (
     verify_2fa_login,
     verify_user_contact,
 )
+from app.services.nominee_access_service import accept_nominee_invitation
 from app.utils.responses import api_success
 from app.utils.time_utils import utcnow
 
@@ -35,17 +39,14 @@ auth_bp = Blueprint("auth", __name__, url_prefix="/auth")
 @auth_bp.post("/register")
 @limiter.limit("10 per minute")
 def register():
-    payload = request.get_json(silent=True) or {}
-    user, token, code = register_user(payload)
-    resp = {
-        "user": user.to_dict(include_private=True),
-        "permissions": compute_user_permissions(user),
-        "token": token,
-    }
-    # Surface sandbox verification preview only in dev/test when no external SMS/SMTP provider is live
-    if current_app.config.get("PAYMENT_PROVIDER") == "mock":
-        resp["verification_code_preview"] = code
-    return api_success(resp, status_code=201)
+    raise DomainError("REGISTRATION_CLOSED", "Apply without an account. Portal access is by nomination only.", 403)
+
+
+@auth_bp.post("/accept-invitation")
+@limiter.limit("10 per minute")
+def accept_invitation():
+    accept_nominee_invitation(request.get_json(silent=True) or {})
+    return api_success({"message": "Password set. You can now sign in to your nominee portal."})
 
 
 @auth_bp.post("/login")
@@ -211,11 +212,8 @@ def resend_verification():
 @limiter.limit("5 per minute")
 def forgot_password():
     payload = request.get_json(silent=True) or {}
-    token = start_password_reset(payload.get("identifier") or payload.get("email") or "")
-    out = {"message": "If an active account matches that contact, password reset instructions have been sent."}
-    if token and current_app.config.get("PAYMENT_PROVIDER") == "mock":
-        out["reset_token_preview"] = token
-    return api_success(out)
+    start_password_reset(payload.get("identifier") or payload.get("email") or "")
+    return api_success({"message": "If an active account matches that contact, password reset instructions have been sent."})
 
 
 @auth_bp.post("/reset-password")

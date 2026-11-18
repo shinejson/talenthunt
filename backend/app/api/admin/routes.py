@@ -5,7 +5,7 @@ from flask import Blueprint, Response, current_app, request
 from sqlalchemy import and_, func, or_
 from sqlalchemy.orm.attributes import flag_modified
 
-from app.extensions import db
+from app.extensions import db, limiter
 from app.models.application import Application, Submission
 from app.models.competition import COMPETITION_STATUSES, ROUND_STATUSES, Category, Competition, Round, VotePackage
 from app.models.elimination import EliminationRun
@@ -28,6 +28,7 @@ from app.services.nomination_service import (
     manage_nominee_voting_link,
     record_review,
 )
+from app.services.nominee_access_service import send_nomination_email
 from app.services.partnership_service import (
     IMAGE_UPLOAD_EXTENSIONS,
     convert_inquiry_to_org,
@@ -714,6 +715,7 @@ def admin_list_submissions():
             or_(
                 Application.reference_no.ilike(like_q),
                 Application.stage_name.ilike(like_q),
+                Application.applicant_full_name.ilike(like_q),
                 Application.location.ilike(like_q),
                 Application.contact_email.ilike(like_q),
                 Application.contact_phone.ilike(like_q),
@@ -772,6 +774,20 @@ def admin_decide_submission(app_id: str):
     payload = request.get_json(silent=True) or {}
     result = decide_application(actor, app_id, payload)
     return api_success(result)
+
+
+@admin_bp.post("/submissions/<app_id>/nomination-email")
+@roles_required("COMPETITION_MANAGER")
+@limiter.limit("10 per minute")
+def admin_resend_nomination_email(app_id: str):
+    application = db.session.get(Application, app_id)
+    if not application:
+        raise DomainError("NOT_FOUND", "Submission not found.", 404)
+    if application.status != "NOMINATED" or not application.nominee:
+        raise DomainError("NOT_NOMINATED", "A portal invitation can only be sent after nomination.", 409)
+    if not send_nomination_email(application, get_current_user()):
+        raise DomainError("EMAIL_NOT_SENT", "The invitation could not be sent. Check the email configuration and the nominee’s account.", 503)
+    return api_success({"nomination_email_sent_at": iso_utc(application.nomination_email_sent_at)})
 
 
 @admin_bp.post("/submissions/<app_id>/moderate")

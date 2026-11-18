@@ -33,7 +33,11 @@ public_bp = Blueprint("public", __name__)
 DEFAULT_FAQS = [
     {
         "q": "How do I enter the StageLight Talent Hunt?",
-        "a": "Create a free account, choose an open competition and category, upload your original video/audio demo (or approved YouTube/Vimeo link), and accept the competition rules.",
+        "a": "Fill out the online application without an account. Choose an open competition and category, add a photo and up to two demos, then save your tracking code. Only nominees receive a portal invitation.",
+    },
+    {
+        "q": "How do I check my application status?",
+        "a": "Open Track Application and enter your tracking code and the email you used to apply. If you’re nominated, we’ll email you a one-time link to set a password and access the nominee portal.",
     },
     {
         "q": "How does paid voting work and when are votes counted?",
@@ -158,6 +162,7 @@ def public_info():
     return api_success(
         {
             "platform_name": platform_name,
+            "demo_accounts_enabled": current_app.config.get("AUTO_SEED_DEMO", False),
             "logo_url": binfo.get("logo_url"),
             "favicon_url": binfo.get("favicon_url"),
             "currency": binfo.get("currency") or "GHS",

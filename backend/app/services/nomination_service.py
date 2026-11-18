@@ -1,3 +1,5 @@
+from sqlalchemy.exc import IntegrityError
+
 from app.extensions import db
 from app.models.application import Application, Review
 from app.models.competition import Round
@@ -6,6 +8,7 @@ from app.models.user import User
 from app.schemas import DomainError
 from app.services.audit_service import log_audit
 from app.services.auth_service import grant_role
+from app.services.nominee_access_service import assign_nominee_account, send_nomination_email
 from app.services.notification_service import notify_user
 from app.utils.security import generate_opaque_slug, slugify
 from app.utils.time_utils import utcnow
@@ -30,7 +33,7 @@ def record_review(reviewer: User, application_id: str, payload: dict) -> Review:
     app_rec = db.session.get(Application, application_id)
     if not app_rec:
         raise DomainError("NOT_FOUND", "Application not found.", 404)
-    if app_rec.user_id == reviewer.id:
+    if _owns_application(app_rec, reviewer):
         raise DomainError("SELF_REVIEW_FORBIDDEN", "You cannot review your own application.", 403)
 
     recommendation = (payload.get("recommendation") or "").upper().strip()
@@ -70,12 +73,26 @@ def record_review(reviewer: User, application_id: str, payload: dict) -> Review:
     return rev
 
 
+def _owns_application(application: Application, user: User):
+    return application.user_id == user.id or (
+        application.is_guest_application and user.email and application.contact_email == user.email.lower()
+    )
+
+
+def _notify_existing_applicant(application: Application, notif_type: str, title: str, body: str):
+    if application.user_id:
+        notify_user(
+            user_id=application.user_id, notif_type=notif_type, title=title, body=body,
+            action_url=f"/portal/submissions/{application.id}",
+        )
+
+
 def decide_application(actor: User, application_id: str, payload: dict) -> dict:
-    app_rec = db.session.get(Application, application_id)
+    app_rec = Application.query.filter_by(id=application_id).with_for_update(of=Application).first()
     if not app_rec:
         raise DomainError("NOT_FOUND", "Application not found.", 404)
 
-    if app_rec.user_id == actor.id:
+    if _owns_application(app_rec, actor):
         raise DomainError("SELF_DECISION_FORBIDDEN", "Applicants cannot approve or nominate themselves.", 403)
 
     decision = (payload.get("decision") or "").upper().strip()
@@ -86,81 +103,56 @@ def decide_application(actor: User, application_id: str, payload: dict) -> dict:
             422,
         )
 
+    if app_rec.status == "NOMINATED":
+        if decision == "NOMINATE":
+            raise DomainError("DUPLICATE_NOMINATION", "This application has already been nominated.", 409)
+        raise DomainError("DECISION_ALREADY_FINAL", "Use the nominee controls to manage a nominated contestant.", 409)
+    if decision == "NOMINATE" and app_rec.is_guest_application and not app_rec.reviews:
+        raise DomainError("REVIEW_REQUIRED", "Save a review scorecard before nominating this applicant.", 422)
+
     reason = (payload.get("reason") or "").strip()
-    applicant_feedback = (payload.get("applicant_feedback") or reason or "").strip() or None
-    if decision in ("REJECT", "REQUEST_CHANGES") and not reason and not applicant_feedback:
+    applicant_feedback = (payload.get("applicant_feedback") or "").strip() or None
+    if not app_rec.is_guest_application and not applicant_feedback:
+        applicant_feedback = reason or None
+    if decision == "REQUEST_CHANGES" and not applicant_feedback:
+        raise DomainError("FEEDBACK_REQUIRED", "Explain the changes in the feedback visible to the applicant.", 422)
+    if decision == "REJECT" and not reason and not applicant_feedback:
         raise DomainError("REASON_REQUIRED", "Please provide a reason or feedback for the applicant.", 422)
 
     before_status = app_rec.status
     app_rec.decision_by = actor.id
     app_rec.decision_at = utcnow()
     app_rec.decision_reason = reason or None
-    if applicant_feedback:
-        app_rec.applicant_feedback = applicant_feedback
+    app_rec.applicant_feedback = applicant_feedback
 
     created_nominee = None
     created_round_entry = None
 
     if decision == "APPROVE":
         app_rec.status = "APPROVED"
-        notify_user(
-            user_id=app_rec.user_id,
+        _notify_existing_applicant(
+            app_rec,
             notif_type="APPLICATION_APPROVED",
             title="Your Talent Demo Was Approved",
             body=f"Your submission ({app_rec.reference_no}) has been approved and is eligible for nomination.",
-            action_url=f"/portal/submissions/{app_rec.id}",
         )
     elif decision == "REJECT":
         app_rec.status = "REJECTED"
-        notify_user(
-            user_id=app_rec.user_id,
+        _notify_existing_applicant(
+            app_rec,
             notif_type="APPLICATION_REJECTED",
             title="Update on Your Talent Application",
             body=f"Thank you for applying ({app_rec.reference_no}). {applicant_feedback or 'Your submission was not selected for this season.'}",
-            action_url=f"/portal/submissions/{app_rec.id}",
         )
     elif decision == "REQUEST_CHANGES":
         app_rec.status = "CHANGES_REQUESTED"
-        notify_user(
-            user_id=app_rec.user_id,
+        _notify_existing_applicant(
+            app_rec,
             notif_type="CHANGES_REQUESTED",
             title="Action Needed: Changes Requested on Your Submission",
             body=f"Please review feedback on {app_rec.reference_no}: {applicant_feedback}",
-            action_url=f"/portal/submissions/{app_rec.id}",
         )
     elif decision == "NOMINATE":
-        # Prevent duplicate nomination in same competition + category (FR-REV-007)
-        dup = Nominee.query.filter_by(
-            competition_id=app_rec.competition_id,
-            category_id=app_rec.category_id,
-            user_id=app_rec.user_id,
-        ).first()
-        if dup:
-            raise DomainError(
-                "DUPLICATE_NOMINATION",
-                "This applicant is already nominated in this competition and category.",
-                409,
-            )
-
-        app_rec.status = "NOMINATED"
-        latest_sub = app_rec.latest_submission
-        public_name = (payload.get("public_name") or app_rec.stage_name or app_rec.applicant.full_name).strip()
-        nominee = Nominee(
-            application_id=app_rec.id,
-            user_id=app_rec.user_id,
-            competition_id=app_rec.competition_id,
-            category_id=app_rec.category_id,
-            public_name=public_name,
-            public_slug=_unique_nominee_slug(public_name),
-            tagline=(latest_sub.title if latest_sub else None),
-            profile_text=(latest_sub.biography or latest_sub.description if latest_sub else None),
-            location=app_rec.location,
-            status="ACTIVE",
-            is_featured=bool(payload.get("is_featured", False)),
-        )
-        db.session.add(nominee)
-        db.session.flush()
-
         # Assign to target round (specified round_id, active OPEN round, or first round)
         target_round = None
         if payload.get("round_id"):
@@ -183,6 +175,53 @@ def decide_application(actor: User, application_id: str, payload: dict) -> dict:
                     .first()
                 )
 
+        try:
+            applicant_user = assign_nominee_account(app_rec)
+        except IntegrityError as exc:
+            db.session.rollback()
+            if app_rec.is_guest_application and User.query.filter_by(email=app_rec.contact_email).first():
+                raise DomainError("CONTACT_ACCOUNT_CONFLICT", "The account was updated by another request. Try nominating again.", 409) from exc
+            raise
+        # Prevent duplicate nomination in same competition + category (FR-REV-007)
+        dup = Nominee.query.filter_by(
+            competition_id=app_rec.competition_id,
+            category_id=app_rec.category_id,
+            user_id=applicant_user.id,
+        ).first()
+        if dup:
+            raise DomainError(
+                "DUPLICATE_NOMINATION",
+                "This applicant is already nominated in this competition and category.",
+                409,
+            )
+
+        app_rec.status = "NOMINATED"
+        latest_sub = app_rec.latest_submission
+        public_name = (payload.get("public_name") or app_rec.stage_name or app_rec.applicant_name or "").strip()
+        if not public_name or len(public_name) > 150:
+            raise DomainError("INVALID_PUBLIC_NAME", "Enter a display name of 1–150 characters.", 422)
+        nominee = Nominee(
+            application_id=app_rec.id,
+            user_id=applicant_user.id,
+            competition_id=app_rec.competition_id,
+            category_id=app_rec.category_id,
+            public_name=public_name,
+            public_slug=_unique_nominee_slug(public_name),
+            tagline=(latest_sub.title if latest_sub else None),
+            profile_text=(latest_sub.biography or latest_sub.description) if latest_sub and not app_rec.is_guest_application else None,
+            location=app_rec.location,
+            status="ACTIVE",
+            is_featured=bool(payload.get("is_featured", False)),
+        )
+        db.session.add(nominee)
+        try:
+            db.session.flush()
+        except IntegrityError as exc:
+            db.session.rollback()
+            if Nominee.query.filter_by(application_id=application_id).first():
+                raise DomainError("DUPLICATE_NOMINATION", "This application has already been nominated.", 409) from exc
+            raise
+
         scores = [r.score for r in app_rec.reviews if r.score is not None]
         avg_score = round(sum(scores) / len(scores), 2) if scores else 0.0
 
@@ -199,20 +238,19 @@ def decide_application(actor: User, application_id: str, payload: dict) -> dict:
             db.session.add(created_round_entry)
             db.session.flush()
 
-        applicant_user = db.session.get(User, app_rec.user_id)
-        if applicant_user:
-            grant_role(applicant_user, "NOMINEE", granted_by=actor.id)
+        grant_role(applicant_user, "NOMINEE", granted_by=actor.id)
 
         comp_slug = app_rec.competition.slug if app_rec.competition else "competition"
         share_slug = created_round_entry.voting_slug if created_round_entry else nominee.public_slug
         voting_path = f"/vote/{comp_slug}/{share_slug}"
 
         notify_user(
-            user_id=app_rec.user_id,
+            user_id=applicant_user.id,
             notif_type="NOMINATED",
             title=f"Congratulations! You Have Been Nominated — {public_name}",
             body=f"You are now an official nominee in {app_rec.competition.title}! Open your Nominee Dashboard to copy your unique voting link ({voting_path}) and QR code.",
             action_url="/portal/voting",
+            send_external=False,
         )
         created_nominee = nominee
 
@@ -230,9 +268,11 @@ def decide_application(actor: User, application_id: str, payload: dict) -> dict:
         },
     )
     db.session.commit()
+    email_sent = send_nomination_email(app_rec, actor) if created_nominee else None
     db.session.refresh(app_rec)
     return {
         "application": app_rec.to_dict(include_internal=True),
+        "nomination_email_sent": email_sent,
         "nominee": created_nominee.to_public_dict() if created_nominee else None,
         "round_entry": created_round_entry.to_dict() if created_round_entry else None,
     }

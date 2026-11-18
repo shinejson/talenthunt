@@ -11,99 +11,6 @@
         vm.loading = false;
       }, function () { vm.loading = false; });
     }])
-    .controller('PortalSubmissionNewController', ['$location', 'ApiService', 'ToastService',
-      function ($location, ApiService, ToastService) {
-        var vm = this;
-        vm.competitions = [];
-        vm.selectedComp = null;
-        vm.uploadedAsset = null;
-        vm.profileImage = null;
-        vm.submitting = false;
-        vm.form = {
-          competition_id: '',
-          category_id: '',
-          stage_name: '',
-          title: '',
-          description: '',
-          biography: '',
-          location: '',
-          genre: '',
-          date_of_birth: '',
-          external_video_url: '',
-          is_minor: false,
-          is_group: false,
-          group_name: '',
-          group_member_count: '',
-          guardian_name: '',
-          guardian_contact: '',
-          guardian_consent: false,
-          consent_accepted: false,
-          rights_declaration: false
-        };
-
-        ApiService.get('/competitions').then(function (res) {
-          vm.competitions = res.data || [];
-          if (vm.competitions.length) {
-            vm.selectedComp = vm.competitions[0];
-            vm.form.competition_id = vm.selectedComp.id;
-            if (vm.selectedComp.categories && vm.selectedComp.categories.length) {
-              vm.form.category_id = vm.selectedComp.categories[0].id;
-            }
-          }
-        });
-
-        vm.onCompChange = function () {
-          for (var i = 0; i < vm.competitions.length; i++) {
-            if (vm.competitions[i].id === vm.form.competition_id) {
-              vm.selectedComp = vm.competitions[i];
-              vm.form.category_id = (vm.selectedComp.categories && vm.selectedComp.categories[0]) ? vm.selectedComp.categories[0].id : '';
-              break;
-            }
-          }
-        };
-
-        vm.submit = function () {
-          vm.submitting = true;
-          // 1. Persist the applicant profile (date of birth + group indication) first.
-          ApiService.patch('/auth/profile', {
-            date_of_birth: vm.form.date_of_birth || null,
-            is_group: !!vm.form.is_group,
-            group_name: vm.form.group_name || null,
-            group_member_count: vm.form.group_member_count ? parseInt(vm.form.group_member_count, 10) || null : null
-          }).then(function () {
-            var payload = {
-              competition_id: vm.form.competition_id,
-              category_id: vm.form.category_id,
-              stage_name: vm.form.stage_name,
-              title: vm.form.title,
-              description: vm.form.description,
-              biography: vm.form.biography,
-              location: vm.form.location,
-              genre: vm.form.genre || null,
-              external_video_url: vm.form.external_video_url,
-              is_minor: !!vm.form.is_minor,
-              guardian_name: vm.form.guardian_name,
-              guardian_contact: vm.form.guardian_contact,
-              guardian_consent: !!vm.form.guardian_consent,
-              consent_accepted: !!vm.form.consent_accepted,
-              rights_declaration: !!vm.form.rights_declaration
-            };
-            if (vm.uploadedAsset) payload.media_asset_id = vm.uploadedAsset.id;
-            ApiService.post('/applications', payload).then(function (res) {
-              vm.submitting = false;
-              ToastService.success('Application submitted! Ref: ' + res.data.reference_no);
-              $location.path('/portal/submissions/' + res.data.id);
-            }, function (err) {
-              vm.submitting = false;
-              ToastService.error(err.message || 'Submission failed.');
-            });
-          }, function (err) {
-            vm.submitting = false;
-            ToastService.error(err.message || 'Profile update failed.');
-          });
-        };
-      }
-    ])
     .controller('PortalSubmissionDetailController', ['$routeParams', 'ApiService', 'ToastService',
       function ($routeParams, ApiService, ToastService) {
         var vm = this;
@@ -152,9 +59,9 @@
         '<div class="container portal-layout">',
         '  <th-portal-nav></th-portal-nav>',
         '  <div class="card">',
-        '    <div class="flex-between mb-2"><h1 style="margin:0;font-size:1.45rem;">My Talent Submissions</h1><a href="/portal/submissions/new" class="btn btn-primary">+ Submit New Demo</a></div>',
+        '    <div class="flex-between mb-2"><h1 style="margin:0;font-size:1.45rem;">My Talent Submissions</h1><a href="/apply" class="btn btn-primary">Apply to a Competition</a></div>',
         '    <div ng-if="vm.loading" class="loading-box">Loading applications...</div>',
-        '    <div ng-if="!vm.loading && !vm.applications.length" class="empty-state">No applications yet. Click "+ Submit New Demo" to enter!</div>',
+        '    <div ng-if="!vm.loading && !vm.applications.length" class="empty-state">Applications linked to your account appear here. For a new entry, use its tracking code to check the status.</div>',
         '    <div class="table-responsive" ng-if="vm.applications.length">',
         '      <table class="data-table" th-datatable dt-data="vm.applications" dt-row="a" dt-page-length="10">',
         '        <thead><tr><th dt-sort="a.reference_no">Reference</th><th dt-sort="a.competition_title">Competition</th><th dt-sort="a.category_name">Category</th><th dt-sort="a.status">Status</th><th dt-sort="a.submitted_at">Submitted</th><th></th></tr></thead>',
@@ -174,57 +81,6 @@
         '</div>'
       ].join(''));
 
-      $templateCache.put('portal/submission-new.html', [
-        '<div class="container portal-layout">',
-        '  <th-portal-nav></th-portal-nav>',
-        '  <div class="card">',
-        '    <h1 style="margin:0 0 6px;font-size:1.5rem;">Submit Your Talent Demo</h1>',
-        '    <p class="muted">Complete your contestant details, upload a demo file or supply an approved video URL, and accept the competition rules.</p>',
-        '    <form ng-submit="vm.submit()">',
-        '      <div class="grid-2">',
-        '        <div class="form-group"><label class="form-label">Competition *</label><select class="form-control" ng-model="vm.form.competition_id" ng-change="vm.onCompChange()" required><option ng-repeat="c in vm.competitions" value="{{ c.id }}">{{ c.title }}</option></select></div>',
-        '        <div class="form-group"><label class="form-label">Talent Category *</label><select class="form-control" ng-model="vm.form.category_id" required><option ng-repeat="cat in (vm.selectedComp ? vm.selectedComp.categories : [])" value="{{ cat.id }}">{{ cat.name }}</option></select></div>',
-        '      </div>',
-        '      <div class="grid-2">',
-        '        <div class="form-group"><label class="form-label">Stage / Performance Name</label><input type="text" class="form-control" ng-model="vm.form.stage_name" placeholder="e.g. Kobby Highlife" /></div>',
-        '        <div class="form-group"><label class="form-label">City / Region</label><input type="text" class="form-control" ng-model="vm.form.location" placeholder="Accra, Greater Accra" /></div>',
-        '      </div>',
-        '      <div class="form-group"><label class="form-label">Demo Title *</label><input type="text" class="form-control" ng-model="vm.form.title" required placeholder="e.g. Original Acoustic Highlife Session" /></div>',
-        '      <div class="form-group"><label class="form-label">Performance Description * (min 10 characters)</label><textarea class="form-control" ng-model="vm.form.description" required placeholder="Tell the judges about your performance..."></textarea></div>',
-        '      <div class="form-group"><label class="form-label">Artist Biography (Optional)</label><textarea class="form-control" ng-model="vm.form.biography" style="min-height:70px;"></textarea></div>',
-        '      <div class="grid-2">',
-        '        <div class="form-group"><label class="form-label">Date of Birth</label><input type="date" class="form-control" ng-model="vm.form.date_of_birth" /></div>',
-        '        <div class="form-group"><label class="form-label">Talent Type / Genre</label><input type="text" class="form-control" ng-model="vm.form.genre" placeholder="e.g. Highlife, Afrobeats, Gospel, Dance, Spoken Word" /></div>',
-        '      </div>',
-        '      <div class="form-group"><label class="form-label">Professional Profile Image</label><th-profile-image-field asset="vm.profileImage"></th-profile-image-field></div>',
-        '      <div class="form-group"><th-upload-field asset="vm.uploadedAsset"></th-upload-field></div>',
-        '      <div class="form-group"><label class="form-label">Or Hosted Video/Audio URL (YouTube, Vimeo, SoundCloud, Audiomack)</label><input type="url" class="form-control" ng-model="vm.form.external_video_url" placeholder="https://www.youtube.com/watch?v=..." /></div>',
-
-        '      <div class="checkbox-row"><input type="checkbox" id="minorChk" ng-model="vm.form.is_minor" /><label for="minorChk">Applicant is under 18 years old (requires Parent/Guardian Consent)</label></div>',
-        '      <div class="card mb-2" ng-if="vm.form.is_minor" style="background:var(--warning-soft);">',
-        '        <div class="grid-2">',
-        '          <div class="form-group"><label class="form-label">Parent/Guardian Full Name *</label><input type="text" class="form-control" ng-model="vm.form.guardian_name" /></div>',
-        '          <div class="form-group"><label class="form-label">Parent/Guardian Phone/Email *</label><input type="text" class="form-control" ng-model="vm.form.guardian_contact" /></div>',
-        '        </div>',
-        '        <div class="checkbox-row"><input type="checkbox" id="gConsent" ng-model="vm.form.guardian_consent" /><label for="gConsent">I confirm verifiable parent/guardian permission for participation and demo publication.</label></div>',
-        '      </div>',
-        '      <div class="checkbox-row"><input type="checkbox" id="groupChk" ng-model="vm.form.is_group" /><label for="groupChk">I am applying as a group (band, troupe, ensemble)</label></div>',
-        '      <div class="card mb-2" ng-if="vm.form.is_group" style="background:var(--info-soft);">',
-        '        <div class="grid-2">',
-        '          <div class="form-group"><label class="form-label">Group Name *</label><input type="text" class="form-control" ng-model="vm.form.group_name" placeholder="e.g. The Accra Beats" /></div>',
-        '          <div class="form-group"><label class="form-label">Number of Members *</label><input type="number" class="form-control" ng-model="vm.form.group_member_count" min="1" /></div>',
-        '        </div>',
-        '        <div class="muted" style="font-size:0.9rem;">The group name will be shown on your public nominee profile if you are nominated.</div>',
-        '      </div>',
-
-        '      <div class="checkbox-row"><input type="checkbox" id="rulesChk" ng-model="vm.form.consent_accepted" required /><label for="rulesChk">I accept the <a href="/rules" target="_blank">Competition Rules</a> and <a href="/privacy" target="_blank">Privacy Notice</a>. *</label></div>',
-        '      <div class="checkbox-row"><input type="checkbox" id="rightsChk" ng-model="vm.form.rights_declaration" required /><label for="rightsChk">I declare that I hold the rights to this performance and consent to public display if nominated. *</label></div>',
-        '      <button type="submit" class="btn btn-lg btn-primary" ng-disabled="vm.submitting">{{ vm.submitting ? "Submitting..." : "Submit Application" }}</button>',
-        '    </form>',
-        '  </div>',
-        '</div>'
-      ].join(''));
-
       $templateCache.put('portal/submission-detail.html', [
         '<div class="container portal-layout">',
         '  <th-portal-nav></th-portal-nav>',
@@ -240,7 +96,9 @@
         '      <p>{{ vm.app.latest_submission.description }}</p>',
         '      <div class="inline-actions">',
         '        <a ng-if="vm.app.latest_submission.external_video_url" ng-href="{{ vm.app.latest_submission.external_video_url }}" target="_blank" class="btn btn-sm btn-secondary">Open External Demo URL</a>',
-        '        <a ng-if="vm.app.latest_submission.media_asset && vm.app.latest_submission.media_asset.url" ng-href="{{ vm.app.latest_submission.media_asset.url }}" target="_blank" class="btn btn-sm btn-secondary">View Uploaded Media</a>',
+        '        <a ng-if="vm.app.latest_submission.media_asset && vm.app.latest_submission.media_asset.url" ng-href="{{ vm.app.latest_submission.media_asset.url }}" target="_blank" rel="noopener" class="btn btn-sm btn-secondary">View Demo 1</a>',
+        '        <a ng-if="vm.app.latest_submission.second_media_asset.url" ng-href="{{ vm.app.latest_submission.second_media_asset.url }}" target="_blank" rel="noopener" class="btn btn-sm btn-secondary">View Demo 2</a>',
+        '        <a ng-if="vm.app.profile_image.url" ng-href="{{ vm.app.profile_image.url }}" target="_blank" rel="noopener" class="btn btn-sm btn-secondary">View Application Photo</a>',
         '        <button ng-if="vm.canEdit()" type="button" class="btn btn-sm btn-primary" ng-click="vm.editMode = !vm.editMode">{{ vm.editMode ? "Cancel Edit" : "Edit / Resubmit Demo" }}</button>',
         '      </div>',
 

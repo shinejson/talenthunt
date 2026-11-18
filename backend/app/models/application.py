@@ -17,7 +17,8 @@ class MediaAsset(db.Model):
     __tablename__ = "media_assets"
 
     id = db.Column(db.String(36), primary_key=True, default=new_uuid)
-    owner_user_id = db.Column(db.String(36), db.ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    owner_user_id = db.Column(db.String(36), db.ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
+    is_private = db.Column(db.Boolean, nullable=False, default=False, server_default=db.false())
     original_filename = db.Column(db.String(255), nullable=False)
     storage_key = db.Column(db.String(255), unique=True, nullable=False)
     mime_type = db.Column(db.String(100), nullable=False)
@@ -43,13 +44,28 @@ class Application(db.Model):
     __tablename__ = "applications"
     __table_args__ = (
         db.Index("ix_applications_comp_status", "competition_id", "status"),
+        db.Index(
+            "uq_applications_guest_entry", "competition_id", "category_id", "contact_email", unique=True,
+            sqlite_where=db.text("applicant_full_name IS NOT NULL AND status <> 'WITHDRAWN'"),
+            postgresql_where=db.text("applicant_full_name IS NOT NULL AND status <> 'WITHDRAWN'"),
+        ),
     )
 
     id = db.Column(db.String(36), primary_key=True, default=new_uuid)
-    user_id = db.Column(db.String(36), db.ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = db.Column(db.String(36), db.ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
     competition_id = db.Column(db.String(36), db.ForeignKey("competitions.id", ondelete="CASCADE"), nullable=False, index=True)
     category_id = db.Column(db.String(36), db.ForeignKey("categories.id", ondelete="RESTRICT"), nullable=False, index=True)
     reference_no = db.Column(db.String(50), unique=True, nullable=False, index=True)
+    # Snapshot supplied by guests. A user is only linked when the application is nominated.
+    applicant_full_name = db.Column(db.String(150), nullable=True)
+    date_of_birth = db.Column(db.Date, nullable=True)
+    is_group = db.Column(db.Boolean, nullable=False, default=False, server_default=db.false())
+    group_name = db.Column(db.String(150), nullable=True)
+    group_member_count = db.Column(db.Integer, nullable=True)
+    profile_image_id = db.Column(
+        db.String(36), db.ForeignKey("media_assets.id", ondelete="SET NULL", name="fk_applications_profile_image"), nullable=True
+    )
+    nomination_email_sent_at = db.Column(db.DateTime, nullable=True)
     stage_name = db.Column(db.String(150), nullable=True)
     contact_email = db.Column(db.String(255), nullable=True)
     contact_phone = db.Column(db.String(40), nullable=True)
@@ -68,6 +84,7 @@ class Application(db.Model):
     updated_at = db.Column(db.DateTime, nullable=False, default=utcnow, onupdate=utcnow)
 
     applicant = db.relationship("User", foreign_keys=[user_id], lazy="joined")
+    profile_image = db.relationship("MediaAsset", lazy="joined")
     competition = db.relationship("Competition", lazy="joined")
     category = db.relationship("Category", lazy="joined")
     submissions = db.relationship(
@@ -90,14 +107,34 @@ class Application(db.Model):
     def latest_submission(self):
         return self.submissions[0] if self.submissions else None
 
+    @property
+    def is_guest_application(self):
+        return self.applicant_full_name is not None
+
+    @property
+    def applicant_name(self):
+        return self.applicant_full_name or (self.applicant.full_name if self.applicant else None)
+
+    def to_tracking_dict(self):
+        return {
+            "tracking_code": self.reference_no,
+            "competition_title": self.competition.title,
+            "category_name": self.category.name,
+            "status": self.status,
+            "applicant_feedback": self.applicant_feedback,
+            "submitted_at": iso_utc(self.submitted_at),
+            "updated_at": iso_utc(self.updated_at),
+        }
+
     def to_dict(self, include_internal: bool = False):
         latest = self.latest_submission
         data = {
             "id": self.id,
             "reference_no": self.reference_no,
             "user_id": self.user_id,
-            "applicant_name": self.applicant.full_name if self.applicant else None,
-            "stage_name": self.stage_name or (self.applicant.full_name if self.applicant else None),
+            "applicant_name": self.applicant_name,
+            "stage_name": self.stage_name or self.applicant_name,
+            "profile_image": self.profile_image.to_dict() if self.profile_image else None,
             "competition_id": self.competition_id,
             "competition_title": self.competition.title if self.competition else None,
             "competition_slug": self.competition.slug if self.competition else None,
@@ -117,6 +154,14 @@ class Application(db.Model):
             "nominee_id": self.nominee.id if self.nominee else None,
         }
         if include_internal:
+            data["is_guest_application"] = self.is_guest_application
+            dob = self.date_of_birth if self.is_guest_application else (self.applicant.date_of_birth if self.applicant else None)
+            data["date_of_birth"] = dob.isoformat() if dob else None
+            for field in ("is_group", "group_name", "group_member_count"):
+                data[field] = getattr(self if self.is_guest_application else self.applicant, field, None)
+            if not data["profile_image"] and not self.is_guest_application and self.applicant and self.applicant.profile_image:
+                data["profile_image"] = self.applicant.profile_image.to_dict()
+            data["nomination_email_sent_at"] = iso_utc(self.nomination_email_sent_at)
             data["contact_email"] = self.contact_email or (self.applicant.email if self.applicant else None)
             data["contact_phone"] = self.contact_phone or (self.applicant.phone if self.applicant else None)
             data["guardian_name"] = self.guardian_name
@@ -140,6 +185,9 @@ class Submission(db.Model):
     description = db.Column(db.Text, nullable=False)
     biography = db.Column(db.Text, nullable=True)
     media_asset_id = db.Column(db.String(36), db.ForeignKey("media_assets.id", ondelete="SET NULL"), nullable=True)
+    second_media_asset_id = db.Column(
+        db.String(36), db.ForeignKey("media_assets.id", ondelete="SET NULL", name="fk_submissions_second_media"), nullable=True
+    )
     external_video_url = db.Column(db.String(500), nullable=True)
     consent_accepted = db.Column(db.Boolean, nullable=False, default=True)
     rights_declaration = db.Column(db.Boolean, nullable=False, default=True)
@@ -150,7 +198,8 @@ class Submission(db.Model):
     created_at = db.Column(db.DateTime, nullable=False, default=utcnow)
 
     application = db.relationship("Application", back_populates="submissions")
-    media_asset = db.relationship("MediaAsset", lazy="joined")
+    media_asset = db.relationship("MediaAsset", foreign_keys=[media_asset_id], lazy="joined")
+    second_media_asset = db.relationship("MediaAsset", foreign_keys=[second_media_asset_id], lazy="joined")
 
     def to_dict(self, include_moderation: bool = False):
         hidden = self.is_hidden or self.moderation_status != "VISIBLE"
@@ -162,6 +211,7 @@ class Submission(db.Model):
             "description": "[Content hidden]" if hidden and not include_moderation else self.description,
             "biography": None if hidden and not include_moderation else self.biography,
             "media_asset": None if hidden and not include_moderation else (self.media_asset.to_dict() if self.media_asset else None),
+            "second_media_asset": self.second_media_asset.to_dict() if self.second_media_asset and (not hidden or include_moderation) else None,
             "external_video_url": None if hidden and not include_moderation else self.external_video_url,
             "consent_version": self.consent_version,
             "is_hidden": hidden,

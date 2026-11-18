@@ -1,15 +1,19 @@
+from contextlib import ExitStack
 from urllib.parse import urlparse
 
+from sqlalchemy.exc import IntegrityError
+
 from app.extensions import db
+from app.integrations.storage.local_storage import remove_stored_media, save_application_video, save_uploaded_profile_image
 from app.models.application import Application, MediaAsset, Submission
-from app.models.competition import Category, Competition
+from app.models.competition import APPLICATION_ENTRY_STATUSES, Category, Competition
 from app.models.user import User
-from app.schemas import ApplicationCreateSchema, DomainError, validate_payload
+from app.schemas import ApplicationCreateSchema, ApplicationTrackingSchema, DomainError, GuestApplicationSchema, validate_payload
 from app.services.audit_service import log_audit
 from app.services.auth_service import grant_role
 from app.services.notification_service import notify_user
 from app.utils.security import generate_reference
-from app.utils.time_utils import utcnow
+from app.utils.time_utils import iso_utc, utcnow
 
 ALLOWED_VIDEO_HOSTS = {
     "youtube.com",
@@ -27,10 +31,13 @@ def _validate_external_video_url(url: str | None) -> str | None:
     if not url:
         return None
     cleaned = url.strip()
-    parsed = urlparse(cleaned)
-    if parsed.scheme not in ("http", "https") or not parsed.netloc:
+    try:
+        parsed = urlparse(cleaned)
+        host = parsed.hostname
+    except ValueError:
+        host = None
+    if not host or parsed.scheme not in ("http", "https") or parsed.username is not None or "\\" in cleaned:
         raise DomainError("INVALID_DEMO_URL", "Demo URL must be a valid HTTP/HTTPS URL.", 422, {"external_video_url": ["Enter a valid URL."]})
-    host = parsed.netloc.lower().split(":")[0]
     if not any(host == allowed or host.endswith("." + allowed) for allowed in ALLOWED_VIDEO_HOSTS):
         raise DomainError(
             "UNAPPROVED_DEMO_HOST",
@@ -41,8 +48,7 @@ def _validate_external_video_url(url: str | None) -> str | None:
     return cleaned
 
 
-def create_application(user: User, raw_payload: dict) -> Application:
-    data = validate_payload(ApplicationCreateSchema, raw_payload)
+def _validate_application_entry(data: dict) -> tuple[Competition, Category]:
     if not data.get("consent_accepted") or not data.get("rights_declaration"):
         raise DomainError(
             "CONSENT_REQUIRED",
@@ -51,7 +57,7 @@ def create_application(user: User, raw_payload: dict) -> Application:
         )
 
     comp = db.session.get(Competition, data["competition_id"])
-    if not comp or comp.status not in ("APPLICATIONS_OPEN", "PUBLISHED", "VOTING"):
+    if not comp or comp.status not in APPLICATION_ENTRY_STATUSES:
         raise DomainError("COMPETITION_CLOSED", "This competition is not currently accepting applications.", 400)
 
     now = utcnow()
@@ -64,6 +70,143 @@ def create_application(user: User, raw_payload: dict) -> Application:
     if not category or category.competition_id != comp.id or category.status != "ACTIVE":
         raise DomainError("INVALID_CATEGORY", "Selected category is invalid for this competition.", 422)
 
+    if data.get("is_minor") and comp.require_guardian_for_minors:
+        if not data.get("guardian_consent") or not (data.get("guardian_name") or "").strip() or not (data.get("guardian_contact") or "").strip():
+            raise DomainError(
+                "GUARDIAN_CONSENT_REQUIRED",
+                "Minor applicants must provide parent/guardian name, contact, and consent.",
+                422,
+            )
+
+    return comp, category
+
+
+def _new_application_reference(length=8):
+    reference = generate_reference("APP", length=length)
+    while Application.query.filter_by(reference_no=reference).first():
+        reference = generate_reference("APP", length=length)
+    return reference
+
+
+def list_open_competitions():
+    now = utcnow()
+    competitions = Competition.query.filter(Competition.status.in_(APPLICATION_ENTRY_STATUSES)).order_by(Competition.created_at.desc()).all()
+    result = []
+    for comp in competitions:
+        categories = [c.to_dict() for c in comp.categories if c.status == "ACTIVE"]
+        if categories and comp.accepts_applications(now):
+            result.append({
+                "id": comp.id, "title": comp.title, "slug": comp.slug, "categories": categories,
+                "applications_close_at": iso_utc(comp.applications_close_at),
+                "require_guardian_for_minors": comp.require_guardian_for_minors,
+            })
+    return result
+
+
+def create_guest_application(raw_payload: dict, files) -> Application:
+    data = validate_payload(GuestApplicationSchema, raw_payload)
+    today = utcnow().date()
+    dob = data["date_of_birth"]
+    if dob > today or dob.year < 1900:
+        raise DomainError("VALIDATION_ERROR", "Enter a valid date of birth.", 422, {"date_of_birth": ["Enter a past date after 1899."]})
+    data["is_minor"] = today.year - dob.year - ((today.month, today.day) < (dob.month, dob.day)) < 18
+    comp, category = _validate_application_entry(data)
+    ext_url = _validate_external_video_url(data.get("external_video_url"))
+    primary = files.get("demo_video_1")
+    if not primary and not ext_url:
+        raise DomainError("DEMO_REQUIRED", "Upload your first demo video or enter an approved link.", 422)
+    if primary and ext_url:
+        raise DomainError("DEMO_SOURCE_CONFLICT", "Choose a file or a link for demo 1, not both.", 422)
+
+    email = data["contact_email"].lower()
+    entry = Application.query.filter(
+        Application.competition_id == comp.id,
+        Application.category_id == category.id,
+        db.func.lower(Application.contact_email) == email,
+        Application.status != "WITHDRAWN",
+    )
+    duplicate = DomainError(
+        "DUPLICATE_APPLICATION", "An application with this email already exists in this category. Use Track Application or contact support.", 409
+    )
+    if entry.first():
+        raise duplicate
+
+    reference = _new_application_reference(length=20)
+    try:
+        with ExitStack() as cleanup:
+            def store(field, saver):
+                file = files.get(field)
+                if not file:
+                    return None
+                try:
+                    asset = saver(file)
+                except DomainError as exc:
+                    raise DomainError(exc.code, exc.message, exc.status_code, {field: [exc.message]}) from exc
+                cleanup.callback(remove_stored_media, asset)
+                return asset
+
+            photo = store("photo", lambda f: save_uploaded_profile_image(f, None, private=True))
+            first_video = store("demo_video_1", save_application_video)
+            second_video = store("demo_video_2", save_application_video)
+            app_rec = Application(
+                competition_id=comp.id,
+                category_id=category.id,
+                reference_no=reference,
+                applicant_full_name=data["full_name"],
+                date_of_birth=dob,
+                is_group=data["is_group"],
+                group_name=data.get("group_name") or None,
+                group_member_count=data.get("group_member_count"),
+                profile_image=photo,
+                stage_name=data.get("stage_name") or data.get("group_name") or data["full_name"],
+                contact_email=email,
+                contact_phone=data["contact_phone"],
+                location=data["location"],
+                genre=data.get("genre") or None,
+                is_minor=data["is_minor"],
+                guardian_name=(data.get("guardian_name") or None) if data["is_minor"] else None,
+                guardian_contact=(data.get("guardian_contact") or None) if data["is_minor"] else None,
+                guardian_consent=data["is_minor"] and data["guardian_consent"],
+            )
+            db.session.add(app_rec)
+            app_rec.submissions.append(Submission(
+                title=data["title"], description=data["description"], biography=data.get("biography") or None,
+                media_asset=first_video, second_media_asset=second_video, external_video_url=ext_url,
+                consent_accepted=True, rights_declaration=True,
+            ))
+            db.session.flush()
+            log_audit(
+                actor_user_id=None, action="APPLICATION_SUBMITTED", entity_type="application", entity_id=app_rec.id,
+                after={"competition_id": comp.id, "category_id": category.id, "source": "guest"},
+            )
+            db.session.commit()
+            cleanup.pop_all()  # Committed applications keep their files.
+    except IntegrityError:
+        db.session.rollback()
+        if entry.first():
+            raise duplicate from None
+        raise
+    except Exception:
+        db.session.rollback()
+        raise
+    return app_rec
+
+
+def track_application(payload: dict) -> dict:
+    data = validate_payload(ApplicationTrackingSchema, payload)
+    application = Application.query.filter(
+        Application.reference_no == data["tracking_code"].strip().upper(),
+        Application.contact_email == data["contact_email"].lower(),
+        Application.applicant_full_name.isnot(None),
+    ).first()
+    if not application:
+        raise DomainError("APPLICATION_NOT_FOUND", "No application matches that tracking code and email.", 404)
+    return application.to_tracking_dict()
+
+
+def create_application(user: User, raw_payload: dict) -> Application:
+    data = validate_payload(ApplicationCreateSchema, raw_payload)
+    comp, category = _validate_application_entry(data)
     existing = Application.query.filter(
         Application.user_id == user.id,
         Application.competition_id == comp.id,
@@ -76,14 +219,6 @@ def create_application(user: User, raw_payload: dict) -> Application:
             "You have already submitted an application in this competition and category.",
             409,
         )
-
-    if data.get("is_minor") and comp.require_guardian_for_minors:
-        if not data.get("guardian_consent") or not (data.get("guardian_name") or "").strip() or not (data.get("guardian_contact") or "").strip():
-            raise DomainError(
-                "GUARDIAN_CONSENT_REQUIRED",
-                "Minor applicants must provide parent/guardian name, contact, and consent.",
-                422,
-            )
 
     ext_url = _validate_external_video_url(data.get("external_video_url"))
     media_asset_id = data.get("media_asset_id")
@@ -99,9 +234,7 @@ def create_application(user: User, raw_payload: dict) -> Application:
             422,
         )
 
-    ref_no = generate_reference("APP")
-    while Application.query.filter_by(reference_no=ref_no).first():
-        ref_no = generate_reference("APP")
+    ref_no = _new_application_reference()
 
     app_rec = Application(
         user_id=user.id,
@@ -201,6 +334,7 @@ def update_or_resubmit_application(user: User, application_id: str, payload: dic
         description=description,
         biography=biography.strip() if isinstance(biography, str) else biography,
         media_asset_id=media_asset_id,
+        second_media_asset_id=latest.second_media_asset_id if latest else None,
         external_video_url=ext_url,
         consent_accepted=True,
         rights_declaration=True,

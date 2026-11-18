@@ -1,0 +1,158 @@
+<section class="application-hero">
+  <div class="container application-width">
+    <p class="application-kicker">STAGELIGHT TALENT HUNT</p>
+    <h1>Apply to perform</h1>
+    <p>Tell us about yourself and upload up to two demos. No account is needed to apply.</p>
+    <a href="/track-application" class="application-hero-link">Already applied? Track your application <span aria-hidden="true">&rarr;</span></a>
+  </div>
+</section>
+
+<div class="container application-width application-page" ng-if="!vm.receipt">
+  <div ng-if="vm.loading" class="loading-box" role="status">Finding open competitions…</div>
+  <div ng-if="!vm.loading && vm.loadError" class="alert alert-danger" role="alert">
+    {{ vm.loadError }} <button type="button" class="btn btn-sm btn-secondary" ng-click="vm.load()">Try again</button>
+  </div>
+  <div ng-if="!vm.loading && !vm.loadError && !vm.competitions.length" class="card empty-state">
+    <h2>No competitions are open for applications</h2>
+    <p>Check the competition listings for upcoming entry dates, or track an application you already submitted.</p>
+    <a href="/competitions" class="btn btn-secondary">Browse competitions</a>
+    <a href="/track-application" class="btn btn-secondary">Track application</a>
+  </div>
+
+  <div class="application-layout" ng-if="!vm.loading && vm.competitions.length">
+    <form name="applyForm" ng-submit="vm.submit(applyForm)">
+      <fieldset class="card application-panel" ng-disabled="vm.submitting" aria-labelledby="entry-heading">
+        <h2 id="entry-heading"><span class="application-step">01</span> Competition</h2>
+        <div class="grid-2">
+          <div class="form-group">
+            <label class="form-label" for="apply-competition">Competition *</label>
+            <select class="form-control" id="apply-competition" ng-model="vm.competition" ng-options="c as c.title for c in vm.competitions track by c.id" ng-change="vm.competitionChanged()" required>
+              <option value="">Select a competition</option>
+            </select>
+          </div>
+          <div class="form-group">
+            <label class="form-label" for="apply-category">Category *</label>
+            <select class="form-control" id="apply-category" ng-model="vm.form.category_id" ng-options="c.id as c.name for c in vm.competition.categories" ng-disabled="!vm.competition" required>
+              <option value="">Select a category</option>
+            </select>
+          </div>
+        </div>
+        <p class="application-hint" ng-if="vm.competition.applications_close_at">Deadline: {{ vm.competition.applications_close_at | date:'mediumDate':'UTC' }} at {{ vm.competition.applications_close_at | date:'shortTime':'UTC' }} (Ghana time).</p>
+      </fieldset>
+
+      <fieldset class="card application-panel" ng-disabled="vm.submitting" aria-labelledby="contact-heading">
+        <h2 id="contact-heading"><span class="application-step">02</span> About you</h2>
+        <p class="application-hint">For group entries, use your lead contact’s details. Fields marked * are required.</p>
+        <div class="grid-2">
+          <div class="form-group"><label class="form-label" for="apply-name">Full name *</label><input class="form-control" id="apply-name" ng-model="vm.form.full_name" autocomplete="name" minlength="2" maxlength="150" required /></div>
+          <div class="form-group"><label class="form-label" for="apply-stage">Stage name</label><input class="form-control" id="apply-stage" ng-model="vm.form.stage_name" maxlength="150" placeholder="If different from your name" aria-describedby="stage-note" /><small class="application-hint" id="stage-note">If nominated, this becomes your public name. Otherwise your group or full name is used.</small></div>
+          <div class="form-group"><label class="form-label" for="apply-email">Email address *</label><input type="email" class="form-control" id="apply-email" ng-model="vm.form.contact_email" autocomplete="email" maxlength="255" required /></div>
+          <div class="form-group"><label class="form-label" for="apply-phone">Phone number *</label><input type="tel" class="form-control" id="apply-phone" ng-model="vm.form.contact_phone" autocomplete="tel" placeholder="+233 24 000 0000" minlength="7" maxlength="40" required /></div>
+          <div class="form-group"><label class="form-label" for="apply-location">City and region *</label><input class="form-control" id="apply-location" ng-model="vm.form.location" maxlength="150" placeholder="e.g. Kumasi, Ashanti" required /></div>
+          <div class="form-group"><label class="form-label" for="apply-dob">Date of birth *</label><input type="date" class="form-control" id="apply-dob" ng-model="vm.form.date_of_birth" autocomplete="bday" min="1900-01-01" ng-attr-max="{{ vm.today }}" required /></div>
+        </div>
+        <label class="application-checkbox"><input type="checkbox" ng-model="vm.form.is_group" /> Applying as a duo or group</label>
+        <div class="grid-2 mt-1" ng-if="vm.form.is_group">
+          <div class="form-group"><label class="form-label" for="apply-group">Group name *</label><input class="form-control" id="apply-group" ng-model="vm.form.group_name" maxlength="150" required /></div>
+          <div class="form-group"><label class="form-label" for="apply-members">Number of performers *</label><input type="number" class="form-control" id="apply-members" ng-model="vm.form.group_member_count" min="2" max="1000" step="1" required /></div>
+        </div>
+        <div class="application-inset mt-2" ng-if="vm.needsGuardian()">
+          <h3>Parent or guardian consent</h3>
+          <p class="application-hint">Applicants under 18 need permission from a parent or guardian.</p>
+          <div class="grid-2">
+            <div class="form-group"><label class="form-label" for="apply-guardian">Parent/guardian name *</label><input class="form-control" id="apply-guardian" ng-model="vm.form.guardian_name" maxlength="150" required /></div>
+            <div class="form-group"><label class="form-label" for="apply-guardian-contact">Parent/guardian phone or email *</label><input class="form-control" id="apply-guardian-contact" ng-model="vm.form.guardian_contact" maxlength="100" required /></div>
+          </div>
+          <label class="application-checkbox"><input type="checkbox" ng-model="vm.form.guardian_consent" required /> My parent or guardian has given consent for this entry. *</label>
+        </div>
+      </fieldset>
+
+      <fieldset class="card application-panel" ng-disabled="vm.submitting" aria-labelledby="act-heading">
+        <h2 id="act-heading"><span class="application-step">03</span> Your talent</h2>
+        <div class="grid-2">
+          <div class="form-group"><label class="form-label" for="apply-title">Act or performance title *</label><input class="form-control" id="apply-title" ng-model="vm.form.title" minlength="3" maxlength="200" required /></div>
+          <div class="form-group"><label class="form-label" for="apply-genre">Genre or style</label><input class="form-control" id="apply-genre" ng-model="vm.form.genre" maxlength="100" placeholder="e.g. Highlife, spoken word, contemporary dance" /></div>
+        </div>
+        <div class="form-group"><label class="form-label" for="apply-description">Tell us about your act *</label><textarea class="form-control" id="apply-description" ng-model="vm.form.description" rows="4" minlength="10" maxlength="4000" placeholder="Describe what you perform and what the review team should look for in your demos." required></textarea></div>
+        <div class="form-group"><label class="form-label" for="apply-bio">Short biography</label><textarea class="form-control" id="apply-bio" ng-model="vm.form.biography" rows="3" maxlength="3000" placeholder="Share your experience and what inspires you or your group."></textarea></div>
+      </fieldset>
+
+      <fieldset class="card application-panel" ng-disabled="vm.submitting" aria-labelledby="uploads-heading">
+        <h2 id="uploads-heading"><span class="application-step">04</span> Photo and demo videos</h2>
+        <p class="application-hint">These files are for the review team. If nominated, you can update your public profile in the portal.</p>
+        <div class="application-inset form-group">
+          <label class="form-label" for="apply-photo">Applicant or group photo <span class="muted">(optional)</span></label>
+          <p class="application-hint" id="photo-format">JPG, PNG, GIF or WebP, up to 5 MB.</p>
+          <input type="file" class="form-control" id="apply-photo" accept=".jpg,.jpeg,.png,.gif,.webp" th-application-file="vm.files.photo" aria-describedby="photo-format" />
+        </div>
+        <div class="application-inset form-group">
+          <h3>Demo 1 *</h3>
+          <p class="application-hint">Upload a file or provide an approved link that the review team can open.</p>
+          <div class="inline-actions mb-1">
+            <label class="application-checkbox"><input type="radio" name="demoSource" ng-model="vm.demoSource" value="file" /> Upload video</label>
+            <label class="application-checkbox"><input type="radio" name="demoSource" ng-model="vm.demoSource" value="link" /> Use a link</label>
+          </div>
+          <div ng-show="vm.demoSource === 'file'">
+            <label class="form-label" for="apply-video-1">Choose your first video</label>
+            <p class="application-hint" id="video-1-format">MP4, MOV or WebM, up to 40 MB.</p>
+            <input type="file" class="form-control" id="apply-video-1" accept=".mp4,.mov,.webm" th-application-file="vm.files.demo_video_1" aria-describedby="video-1-format" />
+          </div>
+          <div ng-if="vm.demoSource === 'link'">
+            <label class="form-label" for="apply-video-link">First demo link *</label>
+            <p class="application-hint" id="video-link-format">YouTube, Vimeo, SoundCloud or Audiomack.</p>
+            <input type="url" class="form-control" id="apply-video-link" ng-model="vm.form.external_video_url" maxlength="500" placeholder="https://…" aria-describedby="video-link-format" required />
+          </div>
+        </div>
+        <div class="application-inset">
+          <label class="form-label" for="apply-video-2">Demo 2 <span class="muted">(optional)</span></label>
+          <p class="application-hint" id="video-2-format">Add another performance. MP4, MOV or WebM, up to 40 MB.</p>
+          <input type="file" class="form-control" id="apply-video-2" accept=".mp4,.mov,.webm" th-application-file="vm.files.demo_video_2" aria-describedby="video-2-format" />
+        </div>
+      </fieldset>
+
+      <fieldset class="card application-panel" ng-disabled="vm.submitting" aria-labelledby="send-heading">
+        <h2 id="send-heading"><span class="application-step">05</span> Submit your application</h2>
+        <div class="application-checkbox mb-1">
+          <input type="checkbox" id="apply-consent" ng-model="vm.form.consent_accepted" required />
+          <div><label for="apply-consent">I agree to the competition rules and privacy notice. *</label> <a href="/rules" target="_blank" rel="noopener">Rules</a> · <a href="/privacy" target="_blank" rel="noopener">Privacy notice</a></div>
+        </div>
+        <label class="application-checkbox"><input type="checkbox" ng-model="vm.form.rights_declaration" required /> I have the rights or permission to submit these files. *</label>
+        <div class="alert alert-danger mt-2" ng-if="vm.error" role="alert">
+          <strong>{{ vm.error }}</strong>
+          <ul ng-if="vm.fieldErrors.length"><li ng-repeat="error in vm.fieldErrors track by $index">{{ error }}</li></ul>
+        </div>
+        <div class="inline-actions mt-2">
+          <button type="submit" class="btn btn-lg btn-primary" ng-disabled="vm.submitting">{{ vm.submitting ? 'Submitting…' : 'Submit application' }}</button>
+          <span class="muted" ng-if="!vm.submitting">You’ll get a tracking code after submitting.</span>
+          <span role="status" ng-if="vm.submitting">{{ vm.progress && vm.progress < 100 ? 'Uploading ' + vm.progress + '%' : 'Saving your application…' }}</span>
+        </div>
+      </fieldset>
+    </form>
+
+    <aside class="application-aside card" aria-labelledby="next-steps-heading">
+      <h2 id="next-steps-heading">What happens next?</h2>
+      <ol>
+        <li><strong>Save your tracking code.</strong> Use it with this email address to check your status anytime.</li>
+        <li><strong>The review team assesses your entry.</strong> Any updates appear on the tracking page.</li>
+        <li><strong>Nominees get an email invitation.</strong> The link lets you set a password and access your portal.</li>
+      </ol>
+      <a href="/track-application">Track an application &rarr;</a>
+    </aside>
+  </div>
+</div>
+
+<div class="container application-single application-page" ng-if="vm.receipt">
+  <section class="card application-panel">
+    <p class="application-received"><th-icon name="check-circle" size="18"></th-icon> APPLICATION RECEIVED</p>
+    <h2 id="application-receipt-heading" tabindex="-1">Your application was submitted</h2>
+    <p>{{ vm.receipt.competition_title }} &middot; {{ vm.receipt.category_name }}</p>
+    <p>Save this code somewhere safe. To track your application, enter it with the email address you used.</p>
+    <div class="application-code">
+      <span>Tracking code</span>
+      <code>{{ vm.receipt.tracking_code }}</code>
+      <button type="button" class="btn btn-sm btn-secondary" ng-click="vm.copyCode()">Copy code</button>
+    </div>
+    <p>If you’re nominated, we’ll email you instructions to access your portal.</p>
+    <a href="/track-application" ng-click="vm.prepareTracking()" class="btn btn-primary">Track this application</a>
+  </section>
+</div>

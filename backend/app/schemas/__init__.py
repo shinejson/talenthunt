@@ -1,4 +1,4 @@
-from marshmallow import Schema, ValidationError, fields, validate, validates_schema
+from marshmallow import Schema, ValidationError, fields, pre_load, validate, validates_schema
 
 
 class DomainError(Exception):
@@ -23,35 +23,6 @@ def validate_payload(schema_cls: type[Schema], payload: dict | None) -> dict:
         ) from exc
 
 
-class RegisterSchema(Schema):
-    full_name = fields.String(required=True, validate=validate.Length(min=2, max=150))
-    email = fields.Email(load_default=None, allow_none=True)
-    phone = fields.String(load_default=None, allow_none=True, validate=validate.Length(min=7, max=30))
-    password = fields.String(required=True, validate=validate.Length(min=8, max=128))
-    location = fields.String(load_default=None, allow_none=True, validate=validate.Length(max=150))
-    date_of_birth = fields.Date(load_default=None, allow_none=True)
-    is_group = fields.Boolean(load_default=False)
-    group_name = fields.String(load_default=None, allow_none=True, validate=validate.Length(max=150))
-    group_member_count = fields.Integer(load_default=None, allow_none=True, validate=validate.Range(min=1))
-
-    @validates_schema
-    def require_email_or_phone(self, data, **kwargs):
-        email = (data.get("email") or "").strip()
-        phone = (data.get("phone") or "").strip()
-        if not email and not phone:
-            raise ValidationError({"email": ["Provide an email address or phone number."]})
-
-    @validates_schema
-    def validate_group_fields(self, data, **kwargs):
-        is_group = bool(data.get("is_group"))
-        group_name = (data.get("group_name") or "").strip() if data.get("group_name") else ""
-        member_count = data.get("group_member_count")
-        if is_group and not group_name:
-            raise ValidationError({"group_name": ["Group name is required when applying as a group."]})
-        if not is_group and (group_name or member_count):
-            raise ValidationError({"is_group": ["Group details are only relevant when applying as a group."]})
-
-
 class LoginSchema(Schema):
     identifier = fields.String(load_default=None, allow_none=True)
     email = fields.String(load_default=None, allow_none=True)
@@ -65,9 +36,9 @@ class LoginSchema(Schema):
         data["identifier"] = ident
 
 
-class ApplicationCreateSchema(Schema):
-    competition_id = fields.String(required=True)
-    category_id = fields.String(required=True)
+class ApplicationDetailsSchema(Schema):
+    competition_id = fields.String(required=True, validate=validate.Length(min=1, max=36))
+    category_id = fields.String(required=True, validate=validate.Length(min=1, max=36))
     stage_name = fields.String(load_default=None, allow_none=True, validate=validate.Length(max=150))
     title = fields.String(required=True, validate=validate.Length(min=3, max=200))
     description = fields.String(required=True, validate=validate.Length(min=10, max=4000))
@@ -77,13 +48,52 @@ class ApplicationCreateSchema(Schema):
     contact_email = fields.String(load_default=None, allow_none=True)
     contact_phone = fields.String(load_default=None, allow_none=True)
     external_video_url = fields.String(load_default=None, allow_none=True, validate=validate.Length(max=500))
-    media_asset_id = fields.String(load_default=None, allow_none=True)
-    is_minor = fields.Boolean(load_default=False)
     guardian_name = fields.String(load_default=None, allow_none=True, validate=validate.Length(max=150))
     guardian_contact = fields.String(load_default=None, allow_none=True, validate=validate.Length(max=100))
     guardian_consent = fields.Boolean(load_default=False)
     consent_accepted = fields.Boolean(required=True)
     rights_declaration = fields.Boolean(required=True)
+
+
+class ApplicationCreateSchema(ApplicationDetailsSchema):
+    media_asset_id = fields.String(load_default=None, allow_none=True)
+    is_minor = fields.Boolean(load_default=False)
+
+
+class GuestApplicationSchema(ApplicationDetailsSchema):
+    full_name = fields.String(required=True, validate=validate.Length(min=2, max=150))
+    contact_email = fields.Email(required=True, validate=validate.Length(max=255))
+    contact_phone = fields.String(required=True, validate=validate.Regexp(
+        r"^\+?[0-9][0-9 ().-]{5,38}[0-9]$", error="Enter a valid phone number."
+    ))
+    location = fields.String(required=True, validate=validate.Length(min=2, max=150))
+    date_of_birth = fields.Date(required=True)
+    is_group = fields.Boolean(load_default=False)
+    group_name = fields.String(load_default=None, allow_none=True, validate=validate.Length(max=150))
+    group_member_count = fields.Integer(load_default=None, allow_none=True, strict=True, validate=validate.Range(min=2, max=1000))
+
+    @pre_load
+    def trim_strings(self, data, **kwargs):
+        if not isinstance(data, dict):
+            return data
+        return {key: value.strip() if isinstance(value, str) else value for key, value in data.items()}
+
+    @validates_schema
+    def validate_group(self, data, **kwargs):
+        if data["is_group"] and not (data.get("group_name") and data.get("group_member_count")):
+            raise ValidationError({"group_name": ["Enter the group name and number of performers."]})
+        if not data["is_group"] and (data.get("group_name") or data.get("group_member_count")):
+            raise ValidationError({"group_name": ["Only groups can enter group details."]})
+
+
+class ApplicationTrackingSchema(Schema):
+    tracking_code = fields.String(required=True, validate=validate.Length(min=1, max=50))
+    contact_email = fields.Email(required=True, validate=validate.Length(max=255))
+
+
+class AcceptInvitationSchema(Schema):
+    token = fields.String(required=True, validate=validate.Regexp(r"^[a-f0-9]{64}\Z"))
+    password = fields.String(required=True, validate=validate.Length(min=8, max=128))
 
 
 class OrderCreateSchema(Schema):

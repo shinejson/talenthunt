@@ -1,0 +1,35 @@
+<section class="application-hero">
+  <div class="container application-width">
+    <p class="application-kicker">STAGELIGHT TALENT HUNT</p>
+    <h1>Track your application</h1>
+    <p>Use your tracking code and the email you applied with. No sign-in required.</p>
+  </div>
+</section>
+<div class="container application-single application-page">
+  <form class="card application-panel" name="trackForm" ng-submit="vm.lookup()">
+    <div class="form-group">
+      <label class="form-label" for="tracking-code">Tracking code</label>
+      <input class="form-control application-code-input" id="tracking-code" ng-model="vm.form.tracking_code" maxlength="50" autocapitalize="characters" spellcheck="false" placeholder="APP-…" required />
+    </div>
+    <div class="form-group">
+      <label class="form-label" for="tracking-email">Application email address</label>
+      <input type="email" class="form-control" id="tracking-email" ng-model="vm.form.contact_email" autocomplete="email" maxlength="255" required />
+    </div>
+    <div class="alert alert-danger" ng-if="vm.error" role="alert">{{ vm.error }}</div>
+    <button type="submit" class="btn btn-primary" ng-disabled="vm.loading">{{ vm.loading ? 'Checking…' : 'Check status' }}</button>
+  </form>
+
+  <section class="card application-panel" ng-if="vm.result" aria-live="polite">
+    <div class="flex-between"><h2>Application status</h2><th-status-badge status="vm.result.status"></th-status-badge></div>
+    <p><strong>{{ vm.result.competition_title }}</strong> &middot; {{ vm.result.category_name }}</p>
+    <p>{{ vm.messages[vm.result.status] }}</p>
+    <p class="application-hint">Submitted {{ vm.result.submitted_at | date:'mediumDate' }} &middot; Last updated {{ vm.result.updated_at | date:'mediumDate' }}</p>
+    <div class="application-inset mb-2" ng-if="vm.result.applicant_feedback"><h3>Feedback from the review team</h3><p class="application-feedback">{{ vm.result.applicant_feedback }}</p></div>
+    <div ng-if="vm.result.status === 'NOMINATED'">
+      <a href="/portal/login" class="btn btn-primary">Sign in to the nominee portal</a>
+      <p class="application-hint mt-1">If your invitation hasn’t arrived, check spam or <a href="/contact">contact support</a>.</p>
+    </div>
+    <a href="/contact" ng-if="vm.result.status === 'CHANGES_REQUESTED'">Contact support about your application</a>
+  </section>
+  <p class="muted">Haven’t applied yet? <a href="/apply">Start a talent application</a>. Need help finding your code? <a href="/contact">Contact support</a>.</p>
+</div>

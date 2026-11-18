@@ -1,10 +1,12 @@
 import secrets
 from datetime import timedelta
-from flask import request, session
+from flask import current_app, request, session
 
 from app.extensions import db
+from app.integrations.email.sender import send_email_message
+from app.integrations.sms.sender import send_sms_message
 from app.models.user import ROLE_DEFINITIONS, Role, User, UserRole, UserSession
-from app.schemas import DomainError, LoginSchema, RegisterSchema, validate_payload
+from app.schemas import DomainError, LoginSchema, validate_payload
 from app.services.audit_service import log_audit
 from app.services.notification_service import notify_user
 from app.utils.security import (
@@ -72,64 +74,6 @@ def set_user_roles(user: User, role_names: list[str], actor_user_id: str):
     )
 
 
-def register_user(raw_payload: dict) -> tuple[User, str, str]:
-    data = validate_payload(RegisterSchema, raw_payload)
-    email = (data.get("email") or "").strip().lower() or None
-    phone = (data.get("phone") or "").strip() or None
-
-    if email and User.query.filter_by(email=email).first():
-        raise DomainError("EMAIL_TAKEN", "An account with this email address already exists.", 409, {"email": ["Email is already registered."]})
-    if phone and User.query.filter_by(phone=phone).first():
-        raise DomainError("PHONE_TAKEN", "An account with this phone number already exists.", 409, {"phone": ["Phone number is already registered."]})
-
-    code = generate_verification_code()
-    user = User(
-        full_name=data["full_name"].strip(),
-        email=email,
-        phone=phone,
-        password_hash=hash_password(data["password"]),
-        location=(data.get("location") or "").strip() or None,
-        date_of_birth=data.get("date_of_birth"),
-        is_group=bool(data.get("is_group")),
-        group_name=(data.get("group_name") or "").strip() or None,
-        group_member_count=data.get("group_member_count"),
-        is_verified=False,
-        verification_code=code,
-        verification_expires_at=utcnow() + timedelta(hours=24),
-        status="ACTIVE",
-    )
-    if user.date_of_birth and user.date_of_birth > utcnow().date():
-        raise DomainError(
-            "VALIDATION_ERROR",
-            "Date of birth cannot be in the future.",
-            422,
-            {"date_of_birth": ["Date of birth cannot be in the future."]},
-        )
-    db.session.add(user)
-    db.session.flush()
-
-    grant_role(user, "APPLICANT")
-
-    notify_user(
-        user_id=user.id,
-        notif_type="ACCOUNT_VERIFICATION",
-        title="Welcome to StageLight — Verify Your Contact",
-        body=f"Welcome {user.full_name}! Your verification code is {code}. Use it in Account Settings to verify your contact channel.",
-        action_url="/portal/security",
-    )
-    log_audit(
-        actor_user_id=user.id,
-        action="USER_REGISTERED",
-        entity_type="user",
-        entity_id=user.id,
-        after={"email": user.email, "phone": user.phone, "roles": user.role_names},
-    )
-    db.session.commit()
-
-    token = _establish_session(user)
-    return user, token, code
-
-
 def login_user(raw_payload: dict) -> tuple[User, str | None, bool, str | None]:
     data = validate_payload(LoginSchema, raw_payload)
     ident = data["identifier"].strip()
@@ -150,22 +94,13 @@ def login_user(raw_payload: dict) -> tuple[User, str | None, bool, str | None]:
         "ama": "ama@stagelight.gh",
         "applicant": "applicant@stagelight.gh",
     }
-    lookup_ident = alias_map.get(ident_lower, ident_lower)
+    lookup_ident = alias_map.get(ident_lower, ident_lower) if current_app.config.get("AUTO_SEED_DEMO") else ident_lower
 
     user = User.query.filter(
         (User.email == lookup_ident) | (User.email == ident_lower) | (User.phone == ident)
     ).first()
 
-    pw_valid = False
-    if user:
-        if verify_password(user.password_hash, data["password"]):
-            pw_valid = True
-        elif user.email == "admin@stagelight.gh" and data["password"] in ("Admin@2026!", "admin", "Admin2026!", "admin123"):
-            pw_valid = True
-        elif ident_lower in ("manager", "judge", "finance", "moderator", "superadmin", "admin") and data["password"].lower() == ident_lower:
-            pw_valid = True
-
-    if not user or not pw_valid:
+    if not user or not verify_password(user.password_hash, data["password"]):
         log_audit(
             actor_user_id=user.id if user else None,
             action="LOGIN_FAILED",
@@ -523,7 +458,7 @@ def resend_verification_code(user: User) -> str:
     return code
 
 
-def start_password_reset(identifier: str) -> str | None:
+def start_password_reset(identifier: str):
     ident = (identifier or "").strip()
     if not ident:
         raise DomainError("VALIDATION_ERROR", "Email or phone is required.", 422)
@@ -542,13 +477,17 @@ def start_password_reset(identifier: str) -> str | None:
     )
     log_audit(actor_user_id=user.id, action="PASSWORD_RESET_REQUESTED", entity_type="user", entity_id=user.id)
     db.session.commit()
-    return token
+    body = f"Your StageLight password reset code is {token}. It expires in two hours. If you did not request it, ignore this message."
+    if user.email:
+        send_email_message(user.email, "StageLight Password Reset", body)
+    elif user.phone:
+        send_sms_message(user.phone, body)
 
 
 def complete_password_reset(reset_token: str, new_password: str) -> User:
     if not reset_token or not new_password or len(new_password) < 8:
         raise DomainError("VALIDATION_ERROR", "Valid reset token and password (min 8 chars) are required.", 422)
-    user = User.query.filter_by(reset_token=reset_token.strip()).first()
+    user = User.query.filter_by(reset_token=reset_token.strip(), status="ACTIVE").first()
     if not user or not user.reset_token_expires_at or utcnow() > user.reset_token_expires_at:
         raise DomainError("INVALID_RESET_TOKEN", "Password reset token is invalid or has expired.", 400)
 

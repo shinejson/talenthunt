@@ -1,6 +1,8 @@
 import io
 import json
-from datetime import timedelta
+from datetime import date, timedelta
+
+from accounts import provision_account
 
 from app.extensions import db
 from app.integrations.payments.mock_adapter import MockPaymentAdapter
@@ -10,14 +12,9 @@ from app.services.auth_service import grant_role
 from app.utils.time_utils import iso_utc, utcnow
 
 
-def _register_and_token(client, name, email, password="Password@123!"):
-    resp = client.post(
-        "/api/v1/auth/register",
-        json={"full_name": name, "email": email, "password": password},
-    )
-    assert resp.status_code == 201, resp.get_json()
-    body = resp.get_json()["data"]
-    return body["user"], body["token"]
+def _account_and_token(client, name, email, password="Password@123!"):
+    data = provision_account(client, name, email, password)
+    return data["user"], data["token"]
 
 
 def _auth_headers(token: str) -> dict:
@@ -26,10 +23,10 @@ def _auth_headers(token: str) -> dict:
 
 def _setup_competition_and_actors(app, client):
     """Create manager, reviewer, finance, super_admin, and an open competition with 2 rounds & packages."""
-    mgr_user, mgr_token = _register_and_token(client, "Manager One", "mgr@test.gh")
-    rev_user, rev_token = _register_and_token(client, "Reviewer One", "rev@test.gh")
-    fin_user, fin_token = _register_and_token(client, "Finance One", "fin@test.gh")
-    sup_user, sup_token = _register_and_token(client, "Super Admin", "super@test.gh")
+    mgr_user, mgr_token = _account_and_token(client, "Manager One", "mgr@test.gh")
+    rev_user, rev_token = _account_and_token(client, "Reviewer One", "rev@test.gh")
+    fin_user, fin_token = _account_and_token(client, "Finance One", "fin@test.gh")
+    sup_user, sup_token = _account_and_token(client, "Super Admin", "super@test.gh")
 
     with app.app_context():
         grant_role(db.session.get(User, mgr_user["id"]), "COMPETITION_MANAGER")
@@ -129,8 +126,8 @@ def _setup_competition_and_actors(app, client):
 
 def test_scenarios_1_to_5_submission_permissions_nomination_and_unique_links(app, client):
     ctx = _setup_competition_and_actors(app, client)
-    app_user1, app_token1 = _register_and_token(client, "Applicant One", "app1@test.gh")
-    app_user2, app_token2 = _register_and_token(client, "Applicant Two", "app2@test.gh")
+    app_user1, app_token1 = _account_and_token(client, "Applicant One", "app1@test.gh")
+    app_user2, app_token2 = _account_and_token(client, "Applicant Two", "app2@test.gh")
 
     # Upload clean MP3 demo file
     upload_resp = client.post(
@@ -242,8 +239,8 @@ def test_scenarios_1_to_5_submission_permissions_nomination_and_unique_links(app
 
 def test_scenarios_6_to_10_and_14_payments_webhooks_idempotency_quarantine_privacy_and_refunds(app, client):
     ctx = _setup_competition_and_actors(app, client)
-    _, app_token1 = _register_and_token(client, "Nominee Alpha", "alpha@test.gh")
-    _, app_token2 = _register_and_token(client, "Nominee Beta", "beta@test.gh")
+    _, app_token1 = _account_and_token(client, "Nominee Alpha", "alpha@test.gh")
+    _, app_token2 = _account_and_token(client, "Nominee Beta", "beta@test.gh")
 
     # Submit & nominate both
     for tok, sname in ((app_token1, "Alpha Star"), (app_token2, "Beta Vibe")):
@@ -391,8 +388,8 @@ def test_scenarios_6_to_10_and_14_payments_webhooks_idempotency_quarantine_priva
 
 def test_scenarios_11_12_13_voting_windows_elimination_progression_and_closed_links(app, client):
     ctx = _setup_competition_and_actors(app, client)
-    _, tok_a = _register_and_token(client, "Nominee A", "noma@test.gh")
-    _, tok_b = _register_and_token(client, "Nominee B", "nomb@test.gh")
+    _, tok_a = _account_and_token(client, "Nominee A", "noma@test.gh")
+    _, tok_b = _account_and_token(client, "Nominee B", "nomb@test.gh")
 
     nominees = []
     for tok, name, jscore in ((tok_a, "Star A", 95.0), (tok_b, "Star B", 80.0)):
@@ -932,7 +929,7 @@ def test_admin_list_endpoints_sort_and_page_for_datatables(app, client):
 
     stage_names = ["Mango Tree", "apple cart", "Zebra Crossing", "Banana Boat", "Kiwi Bird"]
     for idx, stage_name in enumerate(stage_names):
-        _, tok = _register_and_token(client, f"Sorter {idx}", f"sorter{idx}@test.gh")
+        _, tok = _account_and_token(client, f"Sorter {idx}", f"sorter{idx}@test.gh")
         resp = client.post(
             "/api/v1/applications",
             headers=_auth_headers(tok),
@@ -990,28 +987,15 @@ def test_admin_list_endpoints_sort_and_page_for_datatables(app, client):
 
 
 def test_applicant_profile_image_dob_group_and_genre(app, client):
-    """New applicants can provide a professional profile image, date of birth,
-    group indication, and genre when they sign up and submit a demo."""
+    """Existing contestants can still manage their profile and submit demos through the API."""
     ctx = _setup_competition_and_actors(app, client)
     comp, cat = ctx["comp"], ctx["cat"]
 
-    # Register a group applicant with date of birth and group details.
-    reg = client.post(
-        "/api/v1/auth/register",
-        json={
-            "full_name": "The Accra Beats",
-            "email": "beats@example.com",
-            "phone": "0240000002",
-            "password": "StrongPass123!",
-            "location": "Accra, Ghana",
-            "date_of_birth": "2000-05-20",
-            "is_group": True,
-            "group_name": "The Accra Beats",
-            "group_member_count": 4,
-        },
+    reg_data = provision_account(
+        client, "The Accra Beats", "beats@example.com", "StrongPass123!",
+        phone="0240000002", location="Accra, Ghana", date_of_birth=date(2000, 5, 20),
+        is_group=True, group_name="The Accra Beats", group_member_count=4,
     )
-    assert reg.status_code == 201, reg.get_json()
-    reg_data = reg.get_json()["data"]
     user = reg_data["user"]
     assert user["date_of_birth"] == "2000-05-20"
     assert user["is_group"] is True
@@ -1127,17 +1111,6 @@ def test_applicant_profile_image_dob_group_and_genre(app, client):
     assert pub["profile_image"] is not None
     assert pub["profile_image"]["id"] == asset["id"]
 
-    # A solo applicant without profile fields still works end to end.
-    reg2 = client.post(
-        "/api/v1/auth/register",
-        json={
-            "full_name": "Kobby Solo",
-            "email": "kobby@example.com",
-            "password": "StrongPass123!",
-            "date_of_birth": "1995-11-05",
-            "is_group": False,
-        },
-    )
-    assert reg2.status_code == 201
-    assert reg2.get_json()["data"]["user"]["is_group"] is False
-    assert reg2.get_json()["data"]["user"]["group_name"] is None
+    solo = provision_account(client, "Kobby Solo", "kobby@example.com", date_of_birth=date(1995, 11, 5))["user"]
+    assert solo["is_group"] is False
+    assert solo["group_name"] is None

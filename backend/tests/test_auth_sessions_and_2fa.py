@@ -6,17 +6,11 @@ from app.utils.time_utils import utcnow
 from app.utils.totp import generate_totp_code
 
 
-def _register(client, name, email, password="Password@123!"):
-    resp = client.post(
-        "/api/v1/auth/register",
-        json={"full_name": name, "email": email, "password": password},
-    )
-    assert resp.status_code == 201
-    return resp.get_json()["data"]
+from accounts import provision_account
 
 
 def test_login_and_session_tracking(client):
-    reg = _register(client, "Session User", "sess_user@test.gh", "Password@123!")
+    reg = provision_account(client, "Session User", "sess_user@test.gh", "Password@123!")
     user_id = reg["user"]["id"]
 
     login_resp = client.post(
@@ -41,7 +35,7 @@ def test_login_and_session_tracking(client):
 
 
 def test_session_inactivity_timeout(client, app):
-    reg = _register(client, "Timeout User", "timeout_user@test.gh", "Password@123!")
+    reg = provision_account(client, "Timeout User", "timeout_user@test.gh", "Password@123!")
     user_id = reg["user"]["id"]
 
     login_resp = client.post(
@@ -71,7 +65,7 @@ def test_session_inactivity_timeout(client, app):
 
 
 def test_terminate_session_and_logout_others(client, app):
-    _register(client, "Multi Device", "multidev@test.gh", "Password@123!")
+    provision_account(client, "Multi Device", "multidev@test.gh", "Password@123!")
 
     # Establish session 1
     resp1 = client.post(
@@ -107,7 +101,7 @@ def test_terminate_session_and_logout_others(client, app):
 
 
 def test_two_factor_setup_confirm_login_flow(client, app):
-    reg = _register(client, "2FA Applicant", "2fa_app@test.gh", "Password@123!")
+    reg = provision_account(client, "2FA Applicant", "2fa_app@test.gh", "Password@123!")
     token = reg["token"]
 
     # 1. Start 2FA setup

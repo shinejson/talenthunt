@@ -25,6 +25,14 @@ services:
       - PAYSTACK_SECRET_KEY=${PAYSTACK_SECRET_KEY:-}
       - PAYMENT_WEBHOOK_SECRET=${PAYMENT_WEBHOOK_SECRET:-}
       - FRONTEND_ORIGIN=${FRONTEND_ORIGIN:-https://stagelight.com.gh}
+      - PUBLIC_BASE_URL=${PUBLIC_BASE_URL:-https://stagelight.com.gh}
+      - MAIL_SERVER=${MAIL_SERVER:-}
+      - MAIL_PORT=${MAIL_PORT:-587}
+      - MAIL_USE_TLS=${MAIL_USE_TLS:-true}
+      - MAIL_USE_SSL=${MAIL_USE_SSL:-false}
+      - MAIL_USERNAME=${MAIL_USERNAME:-}
+      - MAIL_PASSWORD=${MAIL_PASSWORD:-}
+      - MAIL_DEFAULT_SENDER=${MAIL_DEFAULT_SENDER:-}
       - SESSION_COOKIE_SECURE=true
       - AUTO_SEED_DEMO=false
     volumes:

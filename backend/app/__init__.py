@@ -9,6 +9,7 @@ from werkzeug.exceptions import HTTPException
 from app.config import CONFIG_MAP, Config
 from app.extensions import cors, db, limiter, migrate
 from app.models.application import MediaAsset
+from app.policies.rbac import get_current_user
 from app.schemas import DomainError
 from app.utils.responses import api_error, api_success
 
@@ -115,11 +116,23 @@ def create_app(config_object=None) -> Flask:
         )
 
     @flask_app.get("/uploads/<path:storage_key>")
+    @limiter.exempt
     def serve_uploaded_media(storage_key: str):
         asset = MediaAsset.query.filter_by(storage_key=storage_key, scan_status="CLEAN").first()
         if not asset:
             return api_error("MEDIA_NOT_FOUND", "Media file not found.", 404)
-        return send_from_directory(flask_app.config["UPLOAD_FOLDER"], storage_key, conditional=True)
+        if asset.is_private:
+            user = get_current_user()
+            if not user or (user.id != asset.owner_user_id and not user.has_role("SUPER_ADMIN", "COMPETITION_MANAGER", "REVIEWER", "MODERATOR")):
+                response, status = api_error("MEDIA_NOT_FOUND", "Media file not found.", 404)
+                response.headers["Cache-Control"] = "private, no-store"
+                return response, status
+        response = send_from_directory(
+            flask_app.config["UPLOAD_FOLDER"], storage_key, mimetype=asset.mime_type, conditional=True
+        )
+        if asset.is_private:
+            response.headers["Cache-Control"] = "private, no-store"
+        return response
 
     frontend_dir = flask_app.config.get("FRONTEND_DIR")
 
