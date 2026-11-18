@@ -2,8 +2,8 @@
   'use strict';
 
   angular.module('talentHuntApp')
-    .controller('AdminSubmissionsController', ['ApiService', 'PermissionsService', 'ToastService', 'AdminFilterUtils', 'DataTableSource',
-      function (ApiService, PermissionsService, ToastService, AdminFilterUtils, DataTableSource) {
+    .controller('AdminSubmissionsController', ['ApiService', 'PermissionsService', 'ToastService', 'AdminFilterUtils', 'DataTableSource', '$timeout', '$document',
+      function (ApiService, PermissionsService, ToastService, AdminFilterUtils, DataTableSource, $timeout, $document) {
         var vm = this;
         vm.perms = PermissionsService;
         vm.items = [];
@@ -80,7 +80,13 @@
         vm.inspect = function (item) {
           ApiService.get('/admin/submissions/' + item.id).then(function (res) {
             vm.selected = res.data;
-          });
+            vm.reviewForm = { score: 85, recommendation: 'NOMINATE', internal_notes: '' };
+            vm.decisionForm = { decision: 'NOMINATE', reason: '', applicant_feedback: '' };
+            $timeout(function () {
+              var heading = $document[0].getElementById('review-application-heading');
+              if (heading) heading.focus();
+            });
+          }, function (err) { ToastService.error(err.message); });
         };
 
         vm.submitReview = function () {
@@ -92,12 +98,33 @@
           }, function (err) { ToastService.error(err.message); });
         };
 
+        vm.needsReview = function () {
+          return vm.selected && vm.selected.is_guest_application && !vm.selected.reviews.length;
+        };
+
         vm.submitDecision = function () {
-          ApiService.post('/admin/submissions/' + vm.selected.id + '/decision', vm.decisionForm).then(function (res) {
-            vm.selected = res.data.application;
-            ToastService.success('Decision recorded: ' + vm.selected.status);
+          if (vm.deciding || (vm.decisionForm.decision === 'NOMINATE' && vm.needsReview())) return;
+          var id = vm.selected.id;
+          vm.deciding = true;
+          ApiService.post('/admin/submissions/' + id + '/decision', vm.decisionForm).then(function (res) {
+            if (vm.selected && vm.selected.id === id) vm.selected = res.data.application;
+            if (res.data.nomination_email_sent === false) {
+              ToastService.error('Nomination saved, but the email was not sent. Check mail settings and resend it.');
+            } else {
+              ToastService.success(res.data.nomination_email_sent ? 'Nomination saved and portal email sent.' : 'Decision recorded: ' + res.data.application.status);
+            }
             vm.load(vm.meta.page);
-          }, function (err) { ToastService.error(err.message); });
+          }, function (err) { ToastService.error(err.message); }).finally(function () { vm.deciding = false; });
+        };
+
+        vm.resendEmail = function () {
+          if (vm.sendingEmail) return;
+          var id = vm.selected.id;
+          vm.sendingEmail = true;
+          ApiService.post('/admin/submissions/' + id + '/nomination-email').then(function (res) {
+            if (vm.selected && vm.selected.id === id) vm.selected.nomination_email_sent_at = res.data.nomination_email_sent_at;
+            ToastService.success('Nomination email sent.');
+          }, function (err) { ToastService.error(err.message); }).finally(function () { vm.sendingEmail = false; });
         };
 
         vm.submitModeration = function () {
@@ -193,7 +220,7 @@
 
         '      <div class="table-responsive">',
         '        <table class="data-table" th-datatable="vm.table" dt-row="a" dt-empty="No submissions match the selected filters.">',
-        '          <thead><tr><th dt-sort="reference_no">Ref</th><th dt-sort="stage_name">Applicant / Stage Name</th><th dt-sort="category_name">Category</th><th>Avg Judge Score</th><th dt-sort="status">Status</th><th></th></tr></thead>',
+        '          <thead><tr><th dt-sort="reference_no">Tracking code</th><th dt-sort="stage_name">Applicant / Stage Name</th><th dt-sort="category_name">Category</th><th>Avg Judge Score</th><th dt-sort="status">Status</th><th></th></tr></thead>',
         '          <tbody>',
         '            <tr>',
         '              <td><code>{{ a.reference_no }}</code></td>',
@@ -209,11 +236,41 @@
         '    </div>',
 
         '    <div class="card" ng-if="vm.selected">',
-        '      <div class="flex-between"><h2>Inspecting {{ vm.selected.reference_no }} &mdash; {{ vm.selected.stage_name }}</h2><button type="button" class="btn btn-sm btn-secondary" ng-click="vm.selected = null">Close</button></div>',
-        '      <p><strong>Title:</strong> {{ vm.selected.latest_submission.title }}<br/><strong>Description:</strong> {{ vm.selected.latest_submission.description }}</p>',
-        '      <div class="inline-actions mb-2">',
-        '        <a ng-if="vm.selected.latest_submission.external_video_url" ng-href="{{ vm.selected.latest_submission.external_video_url }}" target="_blank" class="btn btn-sm btn-secondary">Open Hosted Demo</a>',
-        '        <a ng-if="vm.selected.latest_submission.media_asset && vm.selected.latest_submission.media_asset.url" ng-href="{{ vm.selected.latest_submission.media_asset.url }}" target="_blank" class="btn btn-sm btn-secondary">Open Uploaded Media</a>',
+        '      <div class="flex-between"><h2 id="review-application-heading" tabindex="-1" style="scroll-margin-top:100px;">{{ vm.selected.stage_name }}</h2><button type="button" class="btn btn-sm btn-secondary" ng-click="vm.selected = null">Close</button></div>',
+        '      <div class="inline-actions"><strong>Tracking code:</strong> <code>{{ vm.selected.reference_no }}</code><th-status-badge status="vm.selected.status"></th-status-badge></div>',
+        '      <dl class="grid-2 application-review-details">',
+        '        <div><dt>Applicant name</dt><dd>{{ vm.selected.applicant_name }}</dd></div>',
+        '        <div><dt>Competition / category</dt><dd>{{ vm.selected.competition_title }} / {{ vm.selected.category_name }}</dd></div>',
+        '        <div><dt>Email</dt><dd>{{ vm.selected.contact_email || "Not supplied" }}</dd></div>',
+        '        <div><dt>Phone</dt><dd>{{ vm.selected.contact_phone || "Not supplied" }}</dd></div>',
+        '        <div><dt>Location</dt><dd>{{ vm.selected.location || "Not supplied" }}</dd></div>',
+        '        <div><dt>Date of birth</dt><dd>{{ vm.selected.date_of_birth || "Not supplied" }}<span ng-if="vm.selected.is_minor"> (Under 18 at submission)</span></dd></div>',
+        '        <div><dt>Entry type</dt><dd>{{ vm.selected.is_group ? (vm.selected.group_name + " — " + (vm.selected.group_member_count || "unspecified") + " performers") : "Solo" }}</dd></div>',
+        '        <div><dt>Genre</dt><dd>{{ vm.selected.genre || "Not supplied" }}</dd></div>',
+        '        <div ng-if="vm.selected.is_minor"><dt>Guardian details / consent</dt><dd>{{ vm.selected.guardian_name || "Not supplied" }} · {{ vm.selected.guardian_contact || "No contact" }} · {{ vm.selected.guardian_consent ? "Consent declared" : "No consent on file" }}</dd></div>',
+        '      </dl>',
+        '      <div class="mb-2" ng-if="vm.selected.profile_image.url"><h4>Application photo</h4><a ng-href="{{ vm.selected.profile_image.url }}" target="_blank" rel="noopener"><img class="application-review-photo" ng-src="{{ vm.selected.profile_image.url }}" alt="Open the applicant or group photo" /></a></div>',
+        '      <p><strong>Act:</strong> {{ vm.selected.latest_submission.title }}</p>',
+        '      <p class="application-feedback">{{ vm.selected.latest_submission.description }}</p>',
+        '      <div ng-if="vm.selected.latest_submission.biography" class="mt-1"><strong>Biography</strong><p class="application-feedback">{{ vm.selected.latest_submission.biography }}</p></div>',
+        '      <div class="grid-2 mt-2 mb-2" ng-if="vm.selected.latest_submission">',
+        '        <div ng-if="vm.selected.latest_submission.media_asset.url || vm.selected.latest_submission.external_video_url">',
+        '          <h4>Demo 1</h4>',
+        '          <video ng-if="vm.selected.latest_submission.media_asset.mime_type.indexOf(\'video/\') === 0" class="application-review-video" controls preload="none" ng-src="{{ vm.selected.latest_submission.media_asset.url }}" aria-label="Demo 1"></video>',
+        '          <a ng-if="vm.selected.latest_submission.media_asset.url" ng-href="{{ vm.selected.latest_submission.media_asset.url }}" target="_blank" rel="noopener" class="btn btn-sm btn-secondary mt-1">Open Demo 1 File</a>',
+        '          <a ng-if="vm.selected.latest_submission.external_video_url" ng-href="{{ vm.selected.latest_submission.external_video_url }}" target="_blank" rel="noopener noreferrer" class="btn btn-sm btn-secondary mt-1">Open Hosted Demo</a>',
+        '        </div>',
+        '        <div ng-if="vm.selected.latest_submission.second_media_asset.url">',
+        '          <h4>Demo 2</h4>',
+        '          <video class="application-review-video" controls preload="none" ng-src="{{ vm.selected.latest_submission.second_media_asset.url }}" aria-label="Demo 2"></video>',
+        '          <a ng-href="{{ vm.selected.latest_submission.second_media_asset.url }}" target="_blank" rel="noopener" class="btn btn-sm btn-secondary mt-1">Open Demo 2 File</a>',
+        '        </div>',
+        '      </div>',
+        '      <div class="alert alert-info" ng-if="vm.selected.status === \'NOMINATED\'">',
+        '        <strong>Nomination email</strong>',
+        '        <p ng-if="vm.selected.nomination_email_sent_at">Last sent {{ vm.selected.nomination_email_sent_at | date:"medium" }}.</p>',
+        '        <p ng-if="!vm.selected.nomination_email_sent_at">No email delivery recorded. Check your mail configuration and send the email.</p>',
+        '        <button ng-if="vm.perms.canManageCompetition()" type="button" class="btn btn-sm btn-secondary" ng-click="vm.resendEmail()" ng-disabled="vm.sendingEmail">{{ vm.sendingEmail ? "Sending…" : (vm.selected.nomination_email_sent_at ? "Resend nomination email" : "Send nomination email") }}</button>',
         '      </div>',
 
         '      <div class="mb-2" ng-if="vm.selected.reviews && vm.selected.reviews.length">',
@@ -232,12 +289,13 @@
         '          <button type="submit" class="btn btn-sm btn-primary">Record Review</button>',
         '        </form>',
 
-        '        <form class="card" style="background:var(--bg-subtle);" ng-if="vm.perms.canManageCompetition()" ng-submit="vm.submitDecision()">',
+        '        <form class="card" style="background:var(--bg-subtle);" ng-if="vm.perms.canManageCompetition() &amp;&amp; vm.selected.status !== \'NOMINATED\'" ng-submit="vm.submitDecision()">',
         '          <h4 style="margin-top:0;">Authorised Manager Decision</h4>',
-        '          <div class="form-group"><label class="form-label">Action</label><select class="form-control" ng-model="vm.decisionForm.decision"><option value="NOMINATE">NOMINATE (Generate Voting Link)</option><option value="APPROVE">APPROVE</option><option value="REQUEST_CHANGES">REQUEST_CHANGES</option><option value="REJECT">REJECT</option></select></div>',
-        '          <div class="form-group"><label class="form-label">Audit Reason *</label><input type="text" class="form-control" ng-model="vm.decisionForm.reason" placeholder="Decision rationale" /></div>',
+        '          <div class="form-group"><label class="form-label">Action</label><select class="form-control" ng-model="vm.decisionForm.decision"><option value="NOMINATE">NOMINATE (Email Portal Access)</option><option value="APPROVE">APPROVE</option><option value="REQUEST_CHANGES">REQUEST_CHANGES</option><option value="REJECT">REJECT</option></select></div>',
+        '          <div class="form-group"><label class="form-label">Audit Reason (Private)</label><input type="text" class="form-control" ng-model="vm.decisionForm.reason" placeholder="Decision rationale" /></div>',
         '          <div class="form-group"><label class="form-label">Feedback Visible to Applicant</label><textarea class="form-control" ng-model="vm.decisionForm.applicant_feedback"></textarea></div>',
-        '          <button type="submit" class="btn btn-sm btn-success">Execute Decision</button>',
+        '          <p class="muted" ng-if="vm.decisionForm.decision === \'NOMINATE\' &amp;&amp; vm.needsReview()">Record a review scorecard before nominating this applicant.</p>',
+        '          <button type="submit" class="btn btn-sm btn-success" ng-disabled="vm.deciding || (vm.decisionForm.decision === \'NOMINATE\' &amp;&amp; vm.needsReview())">{{ vm.deciding ? "Saving…" : (vm.decisionForm.decision === "NOMINATE" ? "Nominate and Send Email" : "Save Decision") }}</button>',
         '        </form>',
         '      </div>',
 

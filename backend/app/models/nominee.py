@@ -67,7 +67,12 @@ class Nominee(db.Model):
         return None
 
     def to_public_dict(self, public_votes: int | None = None):
-        latest_sub = self.application.latest_submission if self.application else None
+        # Audition materials from the public application form are for review, not public display.
+        application = self.application
+        guest = application and application.is_guest_application
+        latest_sub = application.latest_submission if application and not guest else None
+        profile_image = self.user.profile_image if self.user else None
+        act_details = application if guest else self.user
         sub_dict = latest_sub.to_dict(include_moderation=False) if latest_sub else None
         active_entry = self.get_active_round_entry()
         active_voting_slug = (
@@ -93,10 +98,10 @@ class Nominee(db.Model):
             "currency": self.competition.currency if self.competition else "GHS",
             "category_id": self.category_id,
             "category_name": self.category.name if self.category else None,
-            "profile_image": self.user.profile_image.to_dict() if self.user and self.user.profile_image else None,
-            "is_group": self.user.is_group if self.user else False,
-            "group_name": self.user.group_name if self.user else None,
-            "group_member_count": self.user.group_member_count if self.user else None,
+            "profile_image": profile_image.to_dict() if profile_image and not profile_image.is_private else None,
+            "is_group": act_details.is_group if act_details else False,
+            "group_name": act_details.group_name if act_details else None,
+            "group_member_count": act_details.group_member_count if act_details else None,
             "nominated_at": iso_utc(self.nominated_at),
             "demo": {
                 "title": sub_dict["title"] if sub_dict else None,

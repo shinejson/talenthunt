@@ -211,12 +211,6 @@
             state.inactivityWarning = false;
             return ApiService.post('/auth/session/ping', {});
           },
-          register: function (payload) {
-            return ApiService.post('/auth/register', payload).then(function (res) {
-              saveSession(res.data.token, res.data.user, res.data.permissions);
-              return res.data;
-            });
-          },
           refreshMe: function () {
             return ApiService.get('/auth/me').then(function (res) {
               saveSession(null, res.data.user, res.data.permissions);

@@ -61,7 +61,7 @@
         '      <p style="font-size:1.05rem;color:var(--text-secondary);">{{ vm.comp.description }}</p>',
         '      <div class="alert alert-warning" ng-if="vm.comp.prize_summary"><strong>Grand Prize:</strong> {{ vm.comp.prize_summary }}</div>',
         '      <div class="inline-actions">',
-        '        <a href="/portal/submissions/new" class="btn btn-primary">Apply / Submit Your Demo</a>',
+        '        <a ng-if="vm.comp.accepts_applications &amp;&amp; vm.comp.categories.length" ng-href="/apply?competition={{ vm.comp.slug }}" class="btn btn-primary">Apply to This Competition</a>',
         '        <a href="/rules" class="btn btn-secondary">Official Rules &amp; Prizes</a>',
         '        <a ng-href="/nominees?competition={{ vm.comp.slug }}" class="btn btn-secondary">Browse Nominees</a>',
         '        <a ng-href="/results/{{ vm.comp.slug }}" class="btn btn-secondary">Published Results</a>',
