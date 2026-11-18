@@ -110,19 +110,208 @@
         </div>
       </fieldset>
 
+      <!-- STEP 05: APPLICATION FEE & PAYMENT VERIFICATION -->
+      <fieldset class="card application-panel" ng-disabled="vm.submitting" aria-labelledby="payment-heading">
+        <h2 id="payment-heading"><span class="application-step">05</span> Audition Fee &amp; Payment Verification</h2>
+        <p class="application-hint">Official audition submissions require a verified entry fee to cover adjudication, studio review, and ledger tracking.</p>
+
+        <!-- FREE COMPETITION (NO FEE) -->
+        <div ng-if="vm.competition && (!vm.competition.application_fee_major || vm.competition.application_fee_major <= 0)" class="alert alert-info">
+          <strong>Free Audition Entry:</strong> No fee is required for {{ vm.competition.title }}. You may proceed directly to Step 06.
+        </div>
+
+        <!-- FEE REQUIRED -->
+        <div ng-if="vm.competition && (vm.competition.application_fee_major > 0 || vm.competition.application_fee_minor > 0)">
+          <!-- FEE SUMMARY BAR -->
+          <div style="background:var(--bg-subtle);border:1px solid var(--border);border-radius:8px;padding:14px 18px;display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:12px;margin-bottom:18px;">
+            <div>
+              <div style="font-size:0.8rem;text-transform:uppercase;letter-spacing:0.05em;color:var(--text-muted);font-weight:700;">Required Audition Fee</div>
+              <div style="font-size:1.5rem;font-weight:800;color:var(--text-main);">GHS {{ (vm.competition.application_fee_major || 50) | number:2 }}</div>
+              <small class="muted">{{ vm.competition.title }} &bull; Audition Processing</small>
+            </div>
+            <div>
+              <span ng-if="vm.payment.is_verified" class="badge badge-success" style="font-size:0.9rem;padding:6px 14px;display:inline-flex;align-items:center;gap:6px;">
+                <th-icon name="check-circle" size="14"></th-icon> Paid &amp; Verified
+              </span>
+              <span ng-if="!vm.payment.is_verified && vm.payment.status === 'BOUNCED'" class="badge badge-danger" style="font-size:0.9rem;padding:6px 14px;">
+                ⚠️ Payment Bounced
+              </span>
+              <span ng-if="!vm.payment.is_verified && vm.payment.status !== 'BOUNCED'" class="badge badge-secondary" style="font-size:0.9rem;padding:6px 14px;">
+                Verification Pending
+              </span>
+            </div>
+          </div>
+
+          <!-- VERIFIED SUCCESS CARD -->
+          <div ng-if="vm.payment.is_verified" style="background:#f0fdf4;border:2px solid #86efac;border-radius:8px;padding:18px;margin-bottom:16px;">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+              <th-icon name="check-circle" size="22" style="color:#16a34a;"></th-icon>
+              <strong style="color:#15803d;font-size:1.1rem;">Payment Verified Successfully!</strong>
+            </div>
+            <p style="margin:0 0 10px;color:#166534;font-size:0.9rem;">
+              Your application payment of <strong>GHS {{ (vm.payment.amount_major || vm.competition.application_fee_major || 50) | number:2 }}</strong> has been verified. The payment code below is locked to your entry.
+            </p>
+            <div style="display:flex;align-items:center;gap:12px;background:#fff;padding:10px 14px;border-radius:6px;border:1px solid #bbf7d0;display:inline-flex;">
+              <span style="font-size:0.8rem;color:#4b5563;font-weight:600;">Payment Code:</span>
+              <code style="font-size:1.05rem;font-weight:700;color:#15803d;">{{ vm.payment.code }}</code>
+            </div>
+          </div>
+
+          <!-- NOT VERIFIED: PAYMENT WORKFLOW -->
+          <div ng-if="!vm.payment.is_verified">
+            <!-- Mode Switcher -->
+            <div class="inline-actions mb-3" style="border-bottom:1px solid var(--border);padding-bottom:10px;">
+              <button type="button" class="btn btn-sm" ng-class="{'btn-primary': vm.payment.mode === 'pay', 'btn-secondary': vm.payment.mode !== 'pay'}" ng-click="vm.payment.mode = 'pay'">
+                <th-icon name="credit-card" size="14"></th-icon><span>Pay Online (Mobile Money / Card)</span>
+              </button>
+              <button type="button" class="btn btn-sm" ng-class="{'btn-primary': vm.payment.mode === 'code', 'btn-secondary': vm.payment.mode !== 'code'}" ng-click="vm.payment.mode = 'code'">
+                <th-icon name="tag" size="14"></th-icon><span>I Have a Code / Offline Voucher</span>
+              </button>
+            </div>
+
+            <!-- MODE 1: ONLINE MOBILE MONEY / CARD PAYMENT -->
+            <div ng-if="vm.payment.mode === 'pay'">
+              <!-- STATE: BOUNCED PAYMENT HANDLER CARD -->
+              <div ng-if="vm.payment.status === 'BOUNCED'" style="background:#fff1f2;border:2px solid #fecdd3;border-radius:10px;padding:20px;margin-bottom:18px;">
+                <div style="display:flex;align-items:center;gap:10px;color:#be123c;margin-bottom:8px;">
+                  <th-icon name="alert-triangle" size="24"></th-icon>
+                  <h3 style="margin:0;font-size:1.15rem;color:#be123c;">Payment Bounced or Failed</h3>
+                </div>
+                <p style="margin:0 0 12px;color:#9f1239;font-size:0.92rem;">
+                  <strong>Reason:</strong> {{ vm.payment.bounced_reason || 'Mobile Money transaction timed out or was rejected by your network operator.' }}
+                </p>
+                <div style="background:#fff;border-radius:6px;padding:14px;border:1px solid #ffe4e6;margin-bottom:14px;">
+                  <strong style="display:block;margin-bottom:6px;font-size:0.85rem;color:#881337;">How to complete your application:</strong>
+                  <ul style="margin:0 0 0 18px;padding:0;font-size:0.85rem;color:#4b5563;line-height:1.5;">
+                    <li><strong>Option 1 (Recommended):</strong> Retry with the same or another mobile number/network (Telecel, AT Money, or Bank Card).</li>
+                    <li><strong>Option 2:</strong> If money was already deducted from your wallet, click "Re-query Status" below.</li>
+                    <li><strong>Option 3:</strong> If you bought an offline audition scratch-voucher, switch to "I Have a Code".</li>
+                    <li><strong>Option 4:</strong> For mobile money disputes, contact support with reference <code>{{ vm.payment.reference }}</code>.</li>
+                  </ul>
+                </div>
+                <div class="inline-actions" style="gap:10px;">
+                  <button type="button" class="btn btn-primary btn-sm" ng-click="vm.retryPayment()">
+                    <th-icon name="rotate-ccw" size="13"></th-icon><span>Try Another Payment / Retry</span>
+                  </button>
+                  <button type="button" class="btn btn-secondary btn-sm" ng-click="vm.checkPaymentStatus()" ng-if="vm.payment.reference">
+                    <th-icon name="refresh" size="13"></th-icon><span>Re-query Status</span>
+                  </button>
+                  <button type="button" class="btn btn-outline-secondary btn-sm" ng-click="vm.payment.mode = 'code'">
+                    <th-icon name="tag" size="13"></th-icon><span>Enter Voucher Code</span>
+                  </button>
+                </div>
+              </div>
+
+              <!-- STATE: IDLE (SELECT CHANNEL & PAY) -->
+              <div ng-if="vm.payment.status === 'IDLE'">
+                <div class="grid-2 mb-2">
+                  <div class="form-group">
+                    <label class="form-label">Payment Channel *</label>
+                    <select class="form-control" ng-model="vm.payment.network">
+                      <option value="MTN Mobile Money">MTN Mobile Money (*170#)</option>
+                      <option value="Telecel Cash">Telecel Cash (*110#)</option>
+                      <option value="AT Money">AT Money (*110#)</option>
+                      <option value="Bank Card">Visa / Mastercard Debit/Credit</option>
+                    </select>
+                  </div>
+                  <div class="form-group">
+                    <label class="form-label">Payer Mobile / Contact Phone *</label>
+                    <input type="tel" class="form-control" ng-model="vm.payment.phone" placeholder="{{ vm.form.contact_phone || '+233 24 000 0000' }}" />
+                    <small class="application-hint">The authorization prompt will be delivered here.</small>
+                  </div>
+                </div>
+                <div class="inline-actions">
+                  <button type="button" class="btn btn-gold" ng-click="vm.initiatePayment()">
+                    <th-icon name="credit-card" size="15"></th-icon>
+                    <span>Pay GHS {{ (vm.competition.application_fee_major || 50) | number:2 }} &amp; Verify</span>
+                  </button>
+                </div>
+              </div>
+
+              <!-- STATE: PENDING PROMPT ON PHONE -->
+              <div ng-if="vm.payment.status === 'PENDING'" style="background:var(--bg-subtle);border:1px solid var(--border);border-radius:8px;padding:18px;">
+                <div style="display:flex;align-items:center;gap:10px;margin-bottom:8px;">
+                  <th-icon name="smartphone" size="20" style="color:var(--gold);"></th-icon>
+                  <strong style="font-size:1.05rem;">Approval Prompt Sent to {{ vm.payment.phone || vm.form.contact_phone }}</strong>
+                </div>
+                <p style="margin:0 0 12px;font-size:0.88rem;color:var(--text-muted);">
+                  Please check your handset screen, enter your Mobile Money PIN, and approve the payment of <strong>GHS {{ (vm.competition.application_fee_major || 50) | number:2 }}</strong>.
+                </p>
+                <div class="inline-actions mb-3">
+                  <button type="button" class="btn btn-primary btn-sm" ng-click="vm.checkPaymentStatus()">
+                    <th-icon name="refresh" size="13"></th-icon><span>Check Payment Status</span>
+                  </button>
+                  <button type="button" class="btn btn-secondary btn-sm" ng-click="vm.retryPayment()">
+                    <span>Cancel / Change Number</span>
+                  </button>
+                </div>
+
+                <!-- MOCK SANDBOX SIMULATOR BOX -->
+                <div style="background:#fff;border:1px dashed #cbd5e1;border-radius:6px;padding:12px;font-size:0.82rem;">
+                  <div style="font-weight:700;color:var(--text-main);margin-bottom:6px;display:flex;align-items:center;gap:6px;">
+                    <span>🧪 Sandbox Gateway Simulator</span>
+                    <span class="badge" style="background:#f1f5f9;color:#64748b;font-size:0.7rem;">Demo Mode</span>
+                  </div>
+                  <div style="color:var(--text-muted);margin-bottom:8px;">Simulate live Mobile Money telco responses:</div>
+                  <div class="inline-actions" style="gap:8px;">
+                    <button type="button" class="btn btn-sm btn-success" ng-click="vm.simulatePayment('SUCCESS')">
+                      <th-icon name="check" size="12"></th-icon><span>Simulate Payment Success</span>
+                    </button>
+                    <button type="button" class="btn btn-sm btn-danger" ng-click="vm.simulatePayment('BOUNCED', 'Mobile Money payment declined: Insufficient wallet balance on handset.')">
+                      <th-icon name="x" size="12"></th-icon><span>Simulate Bounced (Insufficient Funds)</span>
+                    </button>
+                    <button type="button" class="btn btn-sm btn-secondary" ng-click="vm.simulatePayment('BOUNCED', 'Transaction timed out: Handset authorization prompt expired.')">
+                      <th-icon name="clock" size="12"></th-icon><span>Simulate Timeout</span>
+                    </button>
+                  </div>
+                </div>
+              </div>
+
+              <!-- STATE: INITIALIZING -->
+              <div ng-if="vm.payment.status === 'INITIALIZING'" class="loading-box" style="padding:20px;text-align:center;">
+                <th-icon name="refresh-cw" size="20" class="spinner"></th-icon>
+                <span style="margin-left:8px;">Processing transaction with payment gateway…</span>
+              </div>
+            </div>
+
+            <!-- MODE 2: ENTER EXISTING CODE / VOUCHER -->
+            <div ng-if="vm.payment.mode === 'code'" style="background:var(--bg-subtle);border:1px solid var(--border);border-radius:8px;padding:18px;">
+              <div class="form-group mb-2">
+                <label class="form-label" style="font-weight:700;">Payment Verification Code or Offline Voucher *</label>
+                <input type="text" class="form-control" ng-model="vm.payment.manual_code" placeholder="e.g. APPPAY-2026-XXXXXXXX" style="font-family:monospace;letter-spacing:1px;font-size:1.05rem;" />
+                <small class="application-hint">Enter the 16-character payment code issued upon Mobile Money approval or on your official scratch voucher.</small>
+              </div>
+              <div class="inline-actions">
+                <button type="button" class="btn btn-primary btn-sm" ng-click="vm.verifyManualCode()" ng-disabled="vm.payment.verifying_manual || !vm.payment.manual_code">
+                  <th-icon name="check-circle" size="13"></th-icon>
+                  <span>{{ vm.payment.verifying_manual ? "Verifying Code..." : "Verify & Apply Code" }}</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      </fieldset>
+
+      <!-- STEP 06: REVIEW & FINAL SUBMISSION -->
       <fieldset class="card application-panel" ng-disabled="vm.submitting" aria-labelledby="send-heading">
-        <h2 id="send-heading"><span class="application-step">05</span> Submit your application</h2>
+        <h2 id="send-heading"><span class="application-step">06</span> Review &amp; Submit your application</h2>
         <div class="application-checkbox mb-1">
           <input type="checkbox" id="apply-consent" ng-model="vm.form.consent_accepted" required />
           <div><label for="apply-consent">I agree to the competition rules and privacy notice. *</label> <a href="/rules" target="_blank" rel="noopener">Rules</a> · <a href="/privacy" target="_blank" rel="noopener">Privacy notice</a></div>
         </div>
         <label class="application-checkbox"><input type="checkbox" ng-model="vm.form.rights_declaration" required /> I have the rights or permission to submit these files. *</label>
+
+        <!-- Payment Guard Alert -->
+        <div class="alert alert-warning mt-2" ng-if="vm.competition && (vm.competition.application_fee_major > 0 || vm.competition.application_fee_minor > 0) && !vm.payment.is_verified">
+          <strong>⚠️ Payment Required:</strong> Please complete and verify your application fee in <strong>Step 05</strong> before submitting.
+        </div>
+
         <div class="alert alert-danger mt-2" ng-if="vm.error" role="alert">
           <strong>{{ vm.error }}</strong>
           <ul ng-if="vm.fieldErrors.length"><li ng-repeat="error in vm.fieldErrors track by $index">{{ error }}</li></ul>
         </div>
         <div class="inline-actions mt-2">
-          <button type="submit" class="btn btn-lg btn-primary" ng-disabled="vm.submitting">{{ vm.submitting ? 'Submitting…' : 'Submit application' }}</button>
+          <button type="submit" class="btn btn-lg btn-primary" ng-disabled="vm.submitting || (vm.competition && (vm.competition.application_fee_major > 0 || vm.competition.application_fee_minor > 0) && !vm.payment.is_verified)">{{ vm.submitting ? 'Submitting…' : 'Submit application' }}</button>
           <span class="muted" ng-if="!vm.submitting">You’ll get a tracking code after submitting.</span>
           <span role="status" ng-if="vm.submitting">{{ vm.progress && vm.progress < 100 ? 'Uploading ' + vm.progress + '%' : 'Saving your application…' }}</span>
         </div>
@@ -151,6 +340,9 @@
       <span>Tracking code</span>
       <code>{{ vm.receipt.tracking_code }}</code>
       <button type="button" class="btn btn-sm btn-secondary" ng-click="vm.copyCode()">Copy code</button>
+    </div>
+    <div ng-if="vm.receipt.payment_code" style="margin-top:12px;padding:10px 14px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:6px;font-size:0.85rem;color:#166534;">
+      <strong>Payment Verified:</strong> Code <code>{{ vm.receipt.payment_code }}</code> &bull; Ref: {{ vm.receipt.payment_reference || 'Settled' }}
     </div>
     <p>If you’re nominated, we’ll email you instructions to access your portal.</p>
     <a href="/track-application" ng-click="vm.prepareTracking()" class="btn btn-primary">Track this application</a>

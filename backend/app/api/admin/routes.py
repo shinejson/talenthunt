@@ -374,6 +374,7 @@ def admin_create_competition():
         max_vote_quantity_per_order=int(payload.get("max_vote_quantity_per_order", 500)),
         max_votes_per_day_per_contact=int(payload["max_votes_per_day_per_contact"]) if payload.get("max_votes_per_day_per_contact") else None,
         require_guardian_for_minors=bool(payload.get("require_guardian_for_minors", True)),
+        application_fee_minor=int(round(float(payload.get("application_fee_major", 50.0)) * 100)) if payload.get("application_fee_major") is not None else int(payload.get("application_fee_minor", 5000)),
     )
     db.session.add(comp)
     db.session.flush()
@@ -420,6 +421,10 @@ def admin_update_competition(comp_id: str):
     if "max_votes_per_day_per_contact" in payload:
         val = payload["max_votes_per_day_per_contact"]
         comp.max_votes_per_day_per_contact = int(val) if val else None
+    if "application_fee_major" in payload and payload["application_fee_major"] is not None:
+        comp.application_fee_minor = max(0, int(round(float(payload["application_fee_major"]) * 100)))
+    elif "application_fee_minor" in payload and payload["application_fee_minor"] is not None:
+        comp.application_fee_minor = max(0, int(payload["application_fee_minor"]))
 
     log_audit(
         actor_user_id=actor.id,
@@ -2161,6 +2166,12 @@ def admin_get_settings():
         },
         "announcements": {"items": []},
         "voting_control": {"global_voting_paused": False, "incident_message": ""},
+        "application_pricing": {
+            "default_fee_major": 50.0,
+            "require_application_fee": True,
+            "currency": "GHS",
+            "allow_offline_vouchers": True,
+        },
     }
 
     def _deep_merge(default_dict, saved_dict):
@@ -2177,6 +2188,19 @@ def admin_get_settings():
             settings[k] = v
         elif isinstance(v, dict) and isinstance(settings[k], dict):
             settings[k] = _deep_merge(v, settings[k])
+
+    settings["competitions_pricing"] = [
+        {
+            "id": c.id,
+            "title": c.title,
+            "slug": c.slug,
+            "status": c.status,
+            "application_fee_minor": c.application_fee_minor if c.application_fee_minor is not None else 5000,
+            "application_fee_major": round((c.application_fee_minor if c.application_fee_minor is not None else 5000) / 100.0, 2),
+            "currency": c.currency or "GHS",
+        }
+        for c in Competition.query.order_by(Competition.created_at.desc()).all()
+    ]
     return api_success(settings)
 
 
@@ -2185,7 +2209,18 @@ def admin_get_settings():
 def admin_update_settings():
     actor = get_current_user()
     payload = request.get_json(silent=True) or {}
+    if "competition_fees" in payload:
+        for item in payload["competition_fees"]:
+            comp_id = item.get("id")
+            comp = db.session.get(Competition, comp_id)
+            if comp:
+                if "application_fee_major" in item and item["application_fee_major"] is not None:
+                    comp.application_fee_minor = max(0, int(round(float(item["application_fee_major"]) * 100)))
+                elif "application_fee_minor" in item and item["application_fee_minor"] is not None:
+                    comp.application_fee_minor = max(0, int(item["application_fee_minor"]))
     for key, val in payload.items():
+        if key == "competition_fees":
+            continue
         rec = PlatformSetting.query.filter_by(key=key).first()
         if not rec:
             rec = PlatformSetting(key=key, value_json=val, updated_by=actor.id)

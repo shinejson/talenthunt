@@ -16,6 +16,7 @@
         vm.newComp = {
           title: '', tagline: '', description: '', status: 'APPLICATIONS_OPEN',
           currency: 'GHS', timezone: 'Africa/Accra', unit_vote_price_minor: 100,
+          application_fee_major: 50.0,
           public_leaderboard: true, nominee_see_rank: true, prize_summary: '', rules: ''
         };
 
@@ -50,6 +51,7 @@
             public_leaderboard: c.public_leaderboard,
             nominee_see_rank: c.nominee_see_rank,
             voting_paused: c.voting_paused,
+            application_fee_major: c.application_fee_major,
             unit_vote_price_minor: c.unit_vote_price_minor,
             max_vote_quantity_per_order: c.max_vote_quantity_per_order,
             rules: c.rules
@@ -205,7 +207,8 @@
         '        <div class="form-group"><label class="form-label">Status</label><select class="form-control" ng-model="vm.newComp.status"><option value="DRAFT">DRAFT</option><option value="PUBLISHED">PUBLISHED</option><option value="APPLICATIONS_OPEN">APPLICATIONS_OPEN</option><option value="VOTING">VOTING</option></select></div>',
         '      </div>',
         '      <div class="form-group"><label class="form-label">Tagline</label><input type="text" class="form-control" ng-model="vm.newComp.tagline" /></div>',
-        '      <div class="grid-2">',
+        '      <div class="grid-3">',
+        '        <div class="form-group"><label class="form-label">Application Fee (GHS)</label><input type="number" step="0.5" min="0" class="form-control" ng-model="vm.newComp.application_fee_major" placeholder="50.00" /></div>',
         '        <div class="form-group"><label class="form-label">Unit Vote Price (Pesewas, 100 = GHS 1.00)</label><input type="number" class="form-control" ng-model="vm.newComp.unit_vote_price_minor" /></div>',
         '        <div class="form-group"><label class="form-label">Prize Summary</label><input type="text" class="form-control" ng-model="vm.newComp.prize_summary" /></div>',
         '      </div>',
@@ -216,8 +219,9 @@
         '    <div ng-if="!vm.competitions.length" class="card empty-state">No competitions match the selected filters.</div>',
         '    <div class="card mb-2" ng-repeat="c in vm.competitions">',
         '      <div class="flex-between mb-2"><strong>{{ c.title }} (<code>{{ c.slug }}</code>)</strong><th-status-badge status="c.status"></th-status-badge></div>',
-        '      <div class="grid-3">',
+        '      <div class="grid-4">',
         '        <div class="form-group"><label class="form-label">Status</label><select class="form-control" ng-model="c.status"><option value="DRAFT">DRAFT</option><option value="PUBLISHED">PUBLISHED</option><option value="APPLICATIONS_OPEN">APPLICATIONS_OPEN</option><option value="REVIEW">REVIEW</option><option value="VOTING">VOTING</option><option value="RESULTS_PENDING">RESULTS_PENDING</option><option value="COMPLETED">COMPLETED</option></select></div>',
+        '        <div class="form-group"><label class="form-label">App Fee (GHS)</label><input type="number" step="0.5" min="0" class="form-control" ng-model="c.application_fee_major" /></div>',
         '        <div class="form-group"><label class="form-label">Vote Price (Minor / Pesewas)</label><input type="number" class="form-control" ng-model="c.unit_vote_price_minor" /></div>',
         '        <div class="form-group"><label class="form-label">Max Votes / Order</label><input type="number" class="form-control" ng-model="c.max_vote_quantity_per_order" /></div>',
         '      </div>',

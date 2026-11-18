@@ -53,6 +53,7 @@ class ApplicationDetailsSchema(Schema):
     guardian_consent = fields.Boolean(load_default=False)
     consent_accepted = fields.Boolean(required=True)
     rights_declaration = fields.Boolean(required=True)
+    payment_code = fields.String(load_default=None, allow_none=True)
 
 
 class ApplicationCreateSchema(ApplicationDetailsSchema):

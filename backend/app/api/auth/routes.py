@@ -1,8 +1,5 @@
 from datetime import date
-<<<<<<< HEAD
-=======
 
->>>>>>> 565e8ea106a20c2946caeabc101b80e71a2f1eb4
 from flask import Blueprint, current_app, g, request
 
 from app.extensions import db, limiter

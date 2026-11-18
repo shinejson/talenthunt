@@ -1,4 +1,4 @@
-from app.models.application import APPLICATION_STATUSES, Application, MediaAsset, Review, Submission
+from app.models.application import APPLICATION_STATUSES, Application, ApplicationPayment, MediaAsset, Review, Submission
 from app.models.competition import COMPETITION_STATUSES, ROUND_STATUSES, Category, Competition, Round, VotePackage
 from app.models.elimination import EliminationResult, EliminationRun
 from app.models.nominee import NOMINEE_STATUSES, Nominee, RoundEntry
@@ -39,6 +39,7 @@ __all__ = [
     "APPLICATION_STATUSES",
     "MediaAsset",
     "Application",
+    "ApplicationPayment",
     "Submission",
     "Review",
     "NOMINEE_STATUSES",

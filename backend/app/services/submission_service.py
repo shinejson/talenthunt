@@ -5,7 +5,7 @@ from sqlalchemy.exc import IntegrityError
 
 from app.extensions import db
 from app.integrations.storage.local_storage import remove_stored_media, save_application_video, save_uploaded_profile_image
-from app.models.application import Application, MediaAsset, Submission
+from app.models.application import Application, ApplicationPayment, MediaAsset, Submission
 from app.models.competition import APPLICATION_ENTRY_STATUSES, Category, Competition
 from app.models.user import User
 from app.schemas import ApplicationCreateSchema, ApplicationTrackingSchema, DomainError, GuestApplicationSchema, validate_payload
@@ -99,6 +99,9 @@ def list_open_competitions():
                 "id": comp.id, "title": comp.title, "slug": comp.slug, "categories": categories,
                 "applications_close_at": iso_utc(comp.applications_close_at),
                 "require_guardian_for_minors": comp.require_guardian_for_minors,
+                "application_fee_minor": comp.application_fee_minor if comp.application_fee_minor is not None else 5000,
+                "application_fee_major": round((comp.application_fee_minor if comp.application_fee_minor is not None else 5000) / 100.0, 2),
+                "currency": comp.currency or "GHS",
             })
     return result
 
@@ -130,6 +133,37 @@ def create_guest_application(raw_payload: dict, files) -> Application:
     )
     if entry.first():
         raise duplicate
+
+    app_payment = None
+    fee_minor = comp.application_fee_minor if comp.application_fee_minor is not None else 0
+    if fee_minor > 0:
+        pay_code = (data.get("payment_code") or raw_payload.get("payment_code") or "").strip().upper()
+        if not pay_code:
+            fee_major_str = f"{fee_minor / 100.0:.2f}"
+            raise DomainError(
+                "PAYMENT_REQUIRED",
+                f"An audition application fee of GHS {fee_major_str} is required before submission. Please complete payment and enter your verification code.",
+                402,
+                {"payment_code": ["Payment verification code is required."]},
+            )
+        app_payment = ApplicationPayment.query.filter_by(
+            payment_code=pay_code,
+            competition_id=comp.id,
+        ).first()
+        if not app_payment or app_payment.status != "SUCCESS":
+            raise DomainError(
+                "PAYMENT_INVALID",
+                "The payment verification code is invalid, unpaid, or bounced. Please verify payment or retry.",
+                422,
+                {"payment_code": ["Invalid or unpaid verification code."]},
+            )
+        if app_payment.is_redeemed:
+            raise DomainError(
+                "PAYMENT_ALREADY_REDEEMED",
+                "This payment verification code has already been applied to another application submission.",
+                409,
+                {"payment_code": ["Code already used."]},
+            )
 
     reference = _new_application_reference(length=20)
     try:
@@ -167,6 +201,10 @@ def create_guest_application(raw_payload: dict, files) -> Application:
                 guardian_name=(data.get("guardian_name") or None) if data["is_minor"] else None,
                 guardian_contact=(data.get("guardian_contact") or None) if data["is_minor"] else None,
                 guardian_consent=data["is_minor"] and data["guardian_consent"],
+                payment_code=app_payment.payment_code if app_payment else None,
+                payment_reference=app_payment.payment_reference if app_payment else None,
+                payment_amount_minor=app_payment.amount_minor if app_payment else 0,
+                payment_status="PAID" if app_payment else "EXEMPT",
             )
             db.session.add(app_rec)
             app_rec.submissions.append(Submission(
@@ -175,9 +213,12 @@ def create_guest_application(raw_payload: dict, files) -> Application:
                 consent_accepted=True, rights_declaration=True,
             ))
             db.session.flush()
+            if app_payment:
+                app_payment.is_redeemed = True
+                app_payment.application_id = app_rec.id
             log_audit(
                 actor_user_id=None, action="APPLICATION_SUBMITTED", entity_type="application", entity_id=app_rec.id,
-                after={"competition_id": comp.id, "category_id": category.id, "source": "guest"},
+                after={"competition_id": comp.id, "category_id": category.id, "source": "guest", "payment_code": app_payment.payment_code if app_payment else None},
             )
             db.session.commit()
             cleanup.pop_all()  # Committed applications keep their files.

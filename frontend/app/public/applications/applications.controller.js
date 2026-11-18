@@ -40,6 +40,142 @@
         vm.demoSource = 'file';
         var competitionSlug = $location.search().competition;
 
+        // Payment verification state
+        vm.payment = {
+          mode: 'pay', // 'pay' or 'code'
+          status: 'IDLE', // 'IDLE', 'INITIALIZING', 'PENDING', 'SUCCESS', 'BOUNCED'
+          phone: '',
+          network: 'MTN Mobile Money',
+          payment_method: 'MOBILE_MONEY',
+          reference: '',
+          code: '',
+          amount_major: 50.0,
+          currency: 'GHS',
+          bounced_reason: '',
+          is_verified: false,
+          manual_code: '',
+          verifying_manual: false
+        };
+
+        vm.initiatePayment = function () {
+          if (!vm.competition) {
+            ToastService.error('Please select a competition first.');
+            return;
+          }
+          if (!vm.form.contact_email || !vm.form.full_name) {
+            ToastService.error('Please enter your full name and email address above before initiating payment.');
+            return;
+          }
+          vm.payment.status = 'INITIALIZING';
+          vm.payment.bounced_reason = '';
+
+          var phone = vm.payment.phone || vm.form.contact_phone;
+          var payload = {
+            competition_id: vm.competition.id,
+            category_id: vm.form.category_id || (vm.competition.categories && vm.competition.categories[0] ? vm.competition.categories[0].id : null),
+            applicant_email: vm.form.contact_email,
+            applicant_name: vm.form.full_name,
+            applicant_phone: phone,
+            network: vm.payment.network,
+            payment_method: vm.payment.payment_method
+          };
+
+          ApiService.post('/applications/payment/initialize', payload).then(function (res) {
+            var data = res.data;
+            vm.payment.reference = data.payment_reference;
+            vm.payment.code = data.payment_code;
+            vm.payment.amount_major = data.amount_major;
+            vm.payment.currency = data.currency;
+            vm.payment.status = 'PENDING';
+            ToastService.info('Prompt sent to ' + (phone || 'your phone') + '. Approve on your handset.');
+          }, function (err) {
+            vm.payment.status = 'IDLE';
+            ToastService.error(err.message || 'Payment initiation failed.');
+          });
+        };
+
+        vm.simulatePayment = function (outcome, customReason) {
+          if (!vm.payment.reference) return;
+          vm.payment.status = 'INITIALIZING';
+          var reason = customReason || (outcome === 'BOUNCED' ? 'Mobile Money payment declined: Insufficient wallet balance or user cancelled prompt on handset.' : null);
+
+          ApiService.post('/applications/payment/complete', {
+            payment_reference: vm.payment.reference,
+            outcome: outcome,
+            bounced_reason: reason
+          }).then(function (res) {
+            var data = res.data;
+            if (data.status === 'SUCCESS') {
+              vm.payment.status = 'SUCCESS';
+              vm.payment.is_verified = true;
+              vm.payment.code = data.payment_code;
+              ToastService.success('Payment verified! Code generated: ' + data.payment_code);
+            } else {
+              vm.payment.status = 'BOUNCED';
+              vm.payment.is_verified = false;
+              vm.payment.bounced_reason = data.bounced_reason || 'Payment could not be completed.';
+              ToastService.error('Payment bounced: ' + vm.payment.bounced_reason);
+            }
+          }, function (err) {
+            vm.payment.status = 'BOUNCED';
+            vm.payment.bounced_reason = err.message || 'Payment failed.';
+            ToastService.error(vm.payment.bounced_reason);
+          });
+        };
+
+        vm.checkPaymentStatus = function () {
+          if (!vm.payment.reference) return;
+          ApiService.get('/applications/payment/' + vm.payment.reference + '/status').then(function (res) {
+            var data = res.data;
+            if (data.status === 'SUCCESS') {
+              vm.payment.status = 'SUCCESS';
+              vm.payment.is_verified = true;
+              vm.payment.code = data.payment_code;
+              ToastService.success('Payment confirmed! Code: ' + data.payment_code);
+            } else if (data.status === 'BOUNCED') {
+              vm.payment.status = 'BOUNCED';
+              vm.payment.is_verified = false;
+              vm.payment.bounced_reason = data.bounced_reason;
+            } else {
+              ToastService.info('Payment still pending on handset. Please authorize the prompt.');
+            }
+          });
+        };
+
+        vm.retryPayment = function () {
+          vm.payment.status = 'IDLE';
+          vm.payment.bounced_reason = '';
+        };
+
+        vm.verifyManualCode = function () {
+          if (!vm.payment.manual_code) {
+            ToastService.error('Please enter a verification payment code.');
+            return;
+          }
+          vm.payment.verifying_manual = true;
+          ApiService.post('/applications/payment/verify-code', {
+            payment_code: vm.payment.manual_code.trim(),
+            competition_id: vm.competition ? vm.competition.id : null
+          }).then(function (res) {
+            vm.payment.verifying_manual = false;
+            var data = res.data;
+            if (data.valid) {
+              vm.payment.code = data.payment_code;
+              vm.payment.amount_major = data.amount_major;
+              vm.payment.is_verified = true;
+              vm.payment.status = 'SUCCESS';
+              ToastService.success('Payment code verified successfully!');
+            } else {
+              vm.payment.is_verified = false;
+              ToastService.error(data.bounced_reason || 'Invalid or already redeemed payment code.');
+            }
+          }, function (err) {
+            vm.payment.verifying_manual = false;
+            vm.payment.is_verified = false;
+            ToastService.error(err.message || 'Failed to verify payment code.');
+          });
+        };
+
         vm.load = function () {
           vm.loading = true;
           vm.loadError = '';
@@ -67,8 +203,20 @@
           if (vm.submitting || form.$invalid || !vm.competition) return;
           vm.error = '';
           vm.fieldErrors = [];
+
+          var feeRequired = vm.competition && (vm.competition.application_fee_minor > 0 || (vm.competition.application_fee_major && vm.competition.application_fee_major > 0));
+          if (feeRequired) {
+            if (!vm.payment.is_verified || !vm.payment.code) {
+              vm.error = 'Application fee payment verification required. Please complete payment or enter a verified payment code in Step 05.';
+              return;
+            }
+          }
+
           var payload = angular.copy(vm.form);
           payload.competition_id = vm.competition.id;
+          if (vm.payment.code) {
+            payload.payment_code = vm.payment.code;
+          }
           payload.date_of_birth = localDate(payload.date_of_birth);
           if (!payload.is_group) {
             delete payload.group_name;

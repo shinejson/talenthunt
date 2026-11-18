@@ -4,7 +4,8 @@ from flask import Blueprint, request
 
 from app.extensions import db, limiter
 from app.integrations.storage.local_storage import save_uploaded_media
-from app.models.application import Application
+from app.models.application import Application, ApplicationPayment
+from app.models.competition import Competition
 from app.policies.rbac import get_current_user, login_required
 from app.schemas import DomainError
 from app.services.submission_service import (
@@ -14,6 +15,8 @@ from app.services.submission_service import (
     track_application,
     update_or_resubmit_application,
 )
+from app.utils.security import generate_reference
+from app.utils.time_utils import iso_utc, utcnow
 from app.utils.responses import api_success
 
 submissions_bp = Blueprint("submissions", __name__, url_prefix="/applications")
@@ -52,6 +55,166 @@ def track_guest_application():
     response, status = api_success(track_application(payload))
     response.headers["Cache-Control"] = "no-store"
     return response, status
+
+
+@submissions_bp.post("/payment/initialize")
+@limiter.limit("30 per minute")
+def initialize_application_payment():
+    payload = request.get_json(silent=True) or {}
+    comp_id = (payload.get("competition_id") or "").strip()
+    comp = db.session.get(Competition, comp_id)
+    if not comp:
+        raise DomainError("NOT_FOUND", "Competition not found.", 404)
+
+    email = (payload.get("applicant_email") or "").strip().lower()
+    if not email or "@" not in email:
+        raise DomainError("VALIDATION_ERROR", "A valid applicant email address is required.", 422)
+
+    phone = (payload.get("applicant_phone") or "").strip()
+    name = (payload.get("applicant_name") or "").strip()
+    category_id = payload.get("category_id")
+    network = (payload.get("network") or "MTN Mobile Money").strip()
+    channel = (payload.get("channel") or "mobile_money").strip()
+
+    fee_minor = comp.application_fee_minor if comp.application_fee_minor is not None else 5000
+    ref = generate_reference("APPREF", length=8)
+    while ApplicationPayment.query.filter_by(payment_reference=ref).first():
+        ref = generate_reference("APPREF", length=8)
+
+    code = generate_reference("APPPAY", length=8)
+    while ApplicationPayment.query.filter_by(payment_code=code).first():
+        code = generate_reference("APPPAY", length=8)
+
+    pay = ApplicationPayment(
+        competition_id=comp.id,
+        category_id=category_id,
+        applicant_name=name or None,
+        applicant_email=email,
+        applicant_phone=phone or None,
+        network=network,
+        channel=channel,
+        payment_reference=ref,
+        payment_code=code,
+        amount_minor=fee_minor,
+        currency=comp.currency or "GHS",
+        status="INITIALIZED",
+    )
+    db.session.add(pay)
+    db.session.commit()
+
+    return api_success(
+        {
+            "id": pay.id,
+            "payment_reference": pay.payment_reference,
+            "payment_code": pay.payment_code,
+            "amount_minor": pay.amount_minor,
+            "amount_major": round(pay.amount_minor / 100.0, 2),
+            "currency": pay.currency,
+            "network": pay.network,
+            "channel": pay.channel,
+            "status": pay.status,
+            "competition_title": comp.title,
+        },
+        status_code=201,
+    )
+
+
+@submissions_bp.post("/payment/complete")
+@limiter.limit("30 per minute")
+def complete_application_payment():
+    payload = request.get_json(silent=True) or {}
+    ref = (payload.get("payment_reference") or payload.get("payment_code") or "").strip().upper()
+    pay = ApplicationPayment.query.filter(
+        db.or_(ApplicationPayment.payment_reference == ref, ApplicationPayment.payment_code == ref)
+    ).first()
+    if not pay:
+        raise DomainError("NOT_FOUND", "Application payment reference not found.", 404)
+
+    outcome = (payload.get("outcome") or "SUCCESS").strip().upper()
+    bounced_reason = payload.get("bounced_reason") or payload.get("reason")
+
+    if outcome in ("BOUNCED", "FAILED", "DECLINED"):
+        pay.status = "BOUNCED"
+        pay.bounced_reason = (
+            bounced_reason
+            or f"Payment authorization failed on {pay.network} ({pay.applicant_phone or 'wallet'}). Insufficient funds, network timeout, or user cancelled."
+        )
+        db.session.commit()
+        return api_success(
+            {
+                "status": "BOUNCED",
+                "payment_reference": pay.payment_reference,
+                "bounced_reason": pay.bounced_reason,
+                "network": pay.network,
+                "can_retry": True,
+            }
+        )
+
+    # Success
+    pay.status = "SUCCESS"
+    pay.bounced_reason = None
+    pay.paid_at = utcnow()
+    db.session.commit()
+
+    return api_success(
+        {
+            "status": "SUCCESS",
+            "payment_reference": pay.payment_reference,
+            "payment_code": pay.payment_code,
+            "amount_major": round(pay.amount_minor / 100.0, 2),
+            "currency": pay.currency,
+            "paid_at": iso_utc(pay.paid_at),
+        }
+    )
+
+
+@submissions_bp.post("/payment/verify-code")
+def verify_application_payment_code():
+    payload = request.get_json(silent=True) or {}
+    code = (payload.get("payment_code") or "").strip().upper()
+    comp_id = (payload.get("competition_id") or "").strip()
+
+    if not code:
+        raise DomainError("VALIDATION_ERROR", "Payment code is required.", 422)
+
+    pay = ApplicationPayment.query.filter_by(payment_code=code).first()
+    if not pay:
+        raise DomainError("INVALID_CODE", "Verification code not found. Please verify the code or make a payment.", 404)
+
+    if comp_id and pay.competition_id != comp_id:
+        raise DomainError("MISMATCH_COMPETITION", "This payment code was issued for a different competition.", 422)
+
+    if pay.status != "SUCCESS":
+        status_msg = "payment has bounced or failed" if pay.status == "BOUNCED" else "payment is not yet completed"
+        raise DomainError("UNPAID_CODE", f"This verification code cannot be used because {status_msg}.", 422)
+
+    if pay.is_redeemed:
+        raise DomainError("CODE_ALREADY_USED", "This verification code has already been applied to another application.", 409)
+
+    return api_success(
+        {
+            "valid": True,
+            "payment_code": pay.payment_code,
+            "payment_reference": pay.payment_reference,
+            "amount_major": round(pay.amount_minor / 100.0, 2),
+            "currency": pay.currency,
+            "status": pay.status,
+            "applicant_name": pay.applicant_name,
+            "applicant_email": pay.applicant_email,
+        }
+    )
+
+
+@submissions_bp.get("/payment/<reference>/status")
+def get_application_payment_status(reference: str):
+    ref = reference.strip().upper()
+    pay = ApplicationPayment.query.filter(
+        db.or_(ApplicationPayment.payment_reference == ref, ApplicationPayment.payment_code == ref)
+    ).first()
+    if not pay:
+        raise DomainError("NOT_FOUND", "Payment reference not found.", 404)
+
+    return api_success(pay.to_dict())
 
 
 @submissions_bp.post("/media")

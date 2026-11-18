@@ -76,6 +76,10 @@ class Application(db.Model):
     guardian_contact = db.Column(db.String(100), nullable=True)
     guardian_consent = db.Column(db.Boolean, nullable=False, default=False)
     status = db.Column(db.String(40), nullable=False, default="SUBMITTED", index=True)
+    payment_code = db.Column(db.String(50), nullable=True, index=True)
+    payment_reference = db.Column(db.String(100), nullable=True, index=True)
+    payment_amount_minor = db.Column(db.Integer, nullable=True, default=0)
+    payment_status = db.Column(db.String(30), nullable=False, default="UNPAID", index=True)
     applicant_feedback = db.Column(db.Text, nullable=True)
     decision_by = db.Column(db.String(36), db.ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     decision_at = db.Column(db.DateTime, nullable=True)
@@ -121,6 +125,8 @@ class Application(db.Model):
             "competition_title": self.competition.title,
             "category_name": self.category.name,
             "status": self.status,
+            "payment_status": self.payment_status or "UNPAID",
+            "payment_code": self.payment_code,
             "applicant_feedback": self.applicant_feedback,
             "submitted_at": iso_utc(self.submitted_at),
             "updated_at": iso_utc(self.updated_at),
@@ -145,6 +151,10 @@ class Application(db.Model):
             "genre": self.genre,
             "guardian_consent": self.guardian_consent,
             "status": self.status,
+            "payment_status": self.payment_status or "UNPAID",
+            "payment_code": self.payment_code,
+            "payment_amount_minor": self.payment_amount_minor or 0,
+            "payment_amount_major": round((self.payment_amount_minor or 0) / 100.0, 2),
             "applicant_feedback": self.applicant_feedback,
             "submitted_at": iso_utc(self.submitted_at),
             "updated_at": iso_utc(self.updated_at),
@@ -248,3 +258,63 @@ class Review(db.Model):
             "internal_notes": self.internal_notes,
             "created_at": iso_utc(self.created_at),
         }
+
+
+class ApplicationPayment(db.Model):
+    __tablename__ = "application_payments"
+
+    id = db.Column(db.String(36), primary_key=True, default=new_uuid)
+    competition_id = db.Column(db.String(36), db.ForeignKey("competitions.id", ondelete="CASCADE"), nullable=False, index=True)
+    category_id = db.Column(db.String(36), db.ForeignKey("categories.id", ondelete="SET NULL"), nullable=True)
+    application_id = db.Column(db.String(36), db.ForeignKey("applications.id", ondelete="SET NULL"), nullable=True, index=True)
+
+    applicant_name = db.Column(db.String(150), nullable=True)
+    applicant_email = db.Column(db.String(255), nullable=False, index=True)
+    applicant_phone = db.Column(db.String(40), nullable=True)
+
+    provider = db.Column(db.String(40), nullable=False, default="mock")
+    channel = db.Column(db.String(40), nullable=False, default="mobile_money")
+    network = db.Column(db.String(50), nullable=False, default="MTN Mobile Money")
+    payment_reference = db.Column(db.String(100), unique=True, nullable=False, index=True)
+    payment_code = db.Column(db.String(50), unique=True, nullable=False, index=True)
+
+    amount_minor = db.Column(db.Integer, nullable=False, default=5000)
+    currency = db.Column(db.String(8), nullable=False, default="GHS")
+
+    status = db.Column(db.String(30), nullable=False, default="INITIALIZED", index=True)  # INITIALIZED, SUCCESS, BOUNCED, FAILED
+    bounced_reason = db.Column(db.String(255), nullable=True)
+    is_redeemed = db.Column(db.Boolean, nullable=False, default=False)
+
+    created_at = db.Column(db.DateTime, nullable=False, default=utcnow)
+    paid_at = db.Column(db.DateTime, nullable=True)
+
+    competition = db.relationship("Competition", lazy="joined")
+    category = db.relationship("Category", lazy="joined")
+    application = db.relationship("Application", foreign_keys=[application_id], lazy="joined")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "competition_id": self.competition_id,
+            "competition_title": self.competition.title if self.competition else None,
+            "category_id": self.category_id,
+            "category_name": self.category.name if self.category else None,
+            "application_id": self.application_id,
+            "applicant_name": self.applicant_name,
+            "applicant_email": self.applicant_email,
+            "applicant_phone": self.applicant_phone,
+            "provider": self.provider,
+            "channel": self.channel,
+            "network": self.network,
+            "payment_reference": self.payment_reference,
+            "payment_code": self.payment_code,
+            "amount_minor": self.amount_minor,
+            "amount_major": round(self.amount_minor / 100.0, 2),
+            "currency": self.currency,
+            "status": self.status,
+            "bounced_reason": self.bounced_reason,
+            "is_redeemed": self.is_redeemed,
+            "created_at": iso_utc(self.created_at),
+            "paid_at": iso_utc(self.paid_at),
+        }
+

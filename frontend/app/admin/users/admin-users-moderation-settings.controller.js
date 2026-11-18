@@ -141,6 +141,7 @@
         vm.activeTab = 'basic_info';
         vm.tabs = [
           { id: 'basic_info', label: 'Basic Info', icon: 'settings' },
+          { id: 'pricing', label: 'Application Fee & Pricing', icon: 'tag' },
           { id: 'social_links', label: 'Social Media', icon: 'share-2' },
           { id: 'payment_gateway', label: 'Payment Gateway', icon: 'credit-card' },
           { id: 'sms_config', label: 'SMS Config', icon: 'mail' },
@@ -224,6 +225,17 @@
           hubtel: false,
           flutterwave: false
         };
+
+        // --- APPLICATION PRICING & COMPETITION FEES ---
+        vm.applicationPricing = {
+          default_fee_major: 50.0,
+          default_fee_minor: 5000,
+          require_application_fee: true,
+          currency: 'GHS',
+          allow_offline_vouchers: true
+        };
+        vm.competitionsPricing = [];
+        vm.savingPricing = false;
 
         // --- SMS CONFIG ---
         vm.smsConfig = {
@@ -311,6 +323,12 @@
                 vm.paymentConfig.flutterwave = angular.extend({}, vm.paymentConfig.flutterwave, data.payment_gateway.flutterwave);
               }
             }
+            if (data.application_pricing) {
+              angular.extend(vm.applicationPricing, data.application_pricing);
+            }
+            if (data.competitions_pricing) {
+              vm.competitionsPricing = data.competitions_pricing;
+            }
             if (data.sms_config) angular.extend(vm.smsConfig, data.sms_config);
             if (data.email_config) angular.extend(vm.emailConfig, data.email_config);
             if (data.backup_config) angular.extend(vm.backupConfig, data.backup_config);
@@ -326,6 +344,34 @@
           });
         }
         loadSettings();
+
+        // --- APPLICATION PRICING ACTIONS ---
+        vm.saveApplicationPricing = function () {
+          vm.savingPricing = true;
+          ApiService.patch('/admin/settings', {
+            application_pricing: vm.applicationPricing,
+            competition_fees: vm.competitionsPricing
+          }).then(function () {
+            vm.savingPricing = false;
+            ToastService.success('Application pricing and competition fees saved successfully.');
+          }, function (err) {
+            vm.savingPricing = false;
+            ToastService.error(err.message || 'Failed to update pricing settings.');
+          });
+        };
+
+        vm.updateCompetitionFee = function (comp) {
+          comp._saving = true;
+          ApiService.patch('/admin/competitions/' + comp.id, {
+            application_fee_major: comp.application_fee_major
+          }).then(function (res) {
+            comp._saving = false;
+            ToastService.success('Fee updated for ' + comp.title);
+          }, function (err) {
+            comp._saving = false;
+            ToastService.error(err.message || 'Failed to update competition fee.');
+          });
+        };
 
         // --- PAYMENT GATEWAY ACTIONS ---
         vm.savePaymentConfig = function () {
@@ -949,6 +995,105 @@
         '        <button type="button" class="btn btn-primary" ng-click="vm.saveBasicInfo()" ng-disabled="vm.savingBasic">',
         '          <th-icon name="check" size="15"></th-icon><span>{{ vm.savingBasic ? "Saving..." : "Save Basic Info" }}</span>',
         '        </button>',
+        '      </div>',
+        '    </div>',
+        '',
+        '    <!-- TAB: APPLICATION PRICING & COMPETITION FEES -->',
+        '    <div ng-if="vm.activeTab === \'pricing\'" class="mt-3">',
+        '      <div class="flex-between mb-2" style="flex-wrap:wrap;gap:10px;">',
+        '        <div>',
+        '          <h1 style="margin:0;font-size:1.5rem;display:flex;align-items:center;gap:8px;">',
+        '            <th-icon name="tag" size="22"></th-icon>',
+        '            <span>Application Fees &amp; Audition Pricing</span>',
+        '          </h1>',
+        '          <p class="muted mb-0" style="margin:4px 0 0;font-size:0.88rem;">Configure global mandatory application fees for contestants on /apply, and set individual competition fee overrides.</p>',
+        '        </div>',
+        '      </div>',
+        '',
+        '      <div class="card mb-3" style="background:var(--bg-subtle);padding:20px;border-radius:12px;">',
+        '        <h3 style="margin-top:0;font-size:1.1rem;display:flex;align-items:center;gap:8px;">',
+        '          <th-icon name="credit-card" size="18" style="color:var(--gold);"></th-icon>',
+        '          <span>Global Default Application Fee</span>',
+        '        </h3>',
+        '        <div class="grid-3 mb-2" style="gap:16px;">',
+        '          <div>',
+        '            <label class="form-label" style="font-weight:700;">Default Audition Fee (GHS) *</label>',
+        '            <input type="number" step="0.5" min="0" class="form-control" ng-model="vm.applicationPricing.default_fee_major" placeholder="50.00" />',
+        '            <span class="field-hint" style="font-size:0.8rem;color:var(--text-muted);display:block;margin-top:4px;">Applies to new competitions unless overridden below.</span>',
+        '          </div>',
+        '          <div>',
+        '            <label class="form-label" style="font-weight:700;">Billing Currency</label>',
+        '            <input type="text" class="form-control" ng-model="vm.applicationPricing.currency" readonly style="background:var(--bg-card);" />',
+        '          </div>',
+        '          <div>',
+        '            <label class="form-label" style="font-weight:700;">Fee Requirement</label>',
+        '            <label class="application-checkbox" style="margin-top:8px;display:flex;align-items:center;gap:8px;">',
+        '              <input type="checkbox" ng-model="vm.applicationPricing.require_application_fee" />',
+        '              <span>Require Fee on /apply</span>',
+        '            </label>',
+        '          </div>',
+        '        </div>',
+        '        <div class="mt-2">',
+        '          <label class="application-checkbox" style="display:flex;align-items:center;gap:8px;">',
+        '            <input type="checkbox" ng-model="vm.applicationPricing.allow_offline_vouchers" />',
+        '            <span>Allow Offline Vouchers &amp; Direct Verification Code Entry</span>',
+        '          </label>',
+        '        </div>',
+        '        <div class="mt-3">',
+        '          <button type="button" class="btn btn-primary" ng-click="vm.saveApplicationPricing()" ng-disabled="vm.savingPricing">',
+        '            <th-icon name="check-circle" size="15"></th-icon><span>{{ vm.savingPricing ? "Saving..." : "Save Pricing Settings" }}</span>',
+        '          </button>',
+        '        </div>',
+        '      </div>',
+        '',
+        '      <div class="card mb-3" style="padding:20px;border-radius:12px;">',
+        '        <div class="flex-between mb-2">',
+        '          <div>',
+        '            <h3 style="margin:0;font-size:1.1rem;display:flex;align-items:center;gap:8px;">',
+        '              <th-icon name="trophy" size="18" style="color:var(--gold);"></th-icon>',
+        '              <span>Per-Competition Fee Overrides</span>',
+        '            </h3>',
+        '            <p class="muted" style="margin:3px 0 0;font-size:0.85rem;">Set specific application fees for each active or upcoming competition.</p>',
+        '          </div>',
+        '        </div>',
+        '        <div class="table-responsive" style="overflow-x:auto;">',
+        '          <table class="table" style="width:100%;border-collapse:collapse;">',
+        '            <thead>',
+        '              <tr style="border-bottom:2px solid var(--border);text-align:left;font-size:0.85rem;color:var(--text-muted);">',
+        '                <th style="padding:10px 12px;">Competition</th>',
+        '                <th style="padding:10px 12px;">Status</th>',
+        '                <th style="padding:10px 12px;width:180px;">Fee (GHS)</th>',
+        '                <th style="padding:10px 12px;text-align:right;">Action</th>',
+        '              </tr>',
+        '            </thead>',
+        '            <tbody>',
+        '              <tr ng-repeat="comp in vm.competitionsPricing" style="border-bottom:1px solid var(--border);">',
+        '                <td style="padding:12px;">',
+        '                  <strong>{{ comp.title }}</strong>',
+        '                  <div class="muted" style="font-size:0.78rem;">Slug: {{ comp.slug }}</div>',
+        '                </td>',
+        '                <td style="padding:12px;">',
+        '                  <span class="badge" ng-class="{\'badge-success\': comp.status===\'VOTING_OPEN\' || comp.status===\'APPLICATIONS_OPEN\', \'badge-secondary\': comp.status!==\'VOTING_OPEN\'}">{{ comp.status }}</span>',
+        '                </td>',
+        '                <td style="padding:12px;">',
+        '                  <div class="input-group" style="display:flex;align-items:center;">',
+        '                    <span style="padding:6px 10px;background:var(--bg-subtle);border:1px solid var(--border);border-right:none;border-radius:4px 0 0 4px;font-size:0.85rem;font-weight:700;">GHS</span>',
+        '                    <input type="number" step="1" min="0" class="form-control" style="border-radius:0 4px 4px 0;max-width:110px;" ng-model="comp.application_fee_major" />',
+        '                  </div>',
+        '                </td>',
+        '                <td style="padding:12px;text-align:right;">',
+        '                  <button type="button" class="btn btn-sm btn-primary" ng-click="vm.updateCompetitionFee(comp)" ng-disabled="comp._saving">',
+        '                    <th-icon name="check" size="13"></th-icon>',
+        '                    <span>{{ comp._saving ? "Saving..." : "Update Fee" }}</span>',
+        '                  </button>',
+        '                </td>',
+        '              </tr>',
+        '              <tr ng-if="!vm.competitionsPricing.length">',
+        '                <td colspan="4" class="text-center muted" style="padding:24px;">No competitions registered yet.</td>',
+        '              </tr>',
+        '            </tbody>',
+        '          </table>',
+        '        </div>',
         '      </div>',
         '    </div>',
         '',

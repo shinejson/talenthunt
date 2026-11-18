@@ -49,6 +49,7 @@ class Competition(db.Model):
     voting_paused = db.Column(db.Boolean, nullable=False, default=False)
     allow_custom_quantity = db.Column(db.Boolean, nullable=False, default=True)
     unit_vote_price_minor = db.Column(db.Integer, nullable=False, default=100)  # 100 pesewas = GHS 1.00
+    application_fee_minor = db.Column(db.Integer, nullable=False, default=5000)  # 5000 pesewas = GHS 50.00
     min_vote_quantity = db.Column(db.Integer, nullable=False, default=1)
     max_vote_quantity_per_order = db.Column(db.Integer, nullable=False, default=500)
     max_votes_per_day_per_contact = db.Column(db.Integer, nullable=True, default=2000)
@@ -80,6 +81,11 @@ class Competition(db.Model):
             and (not self.applications_close_at or now <= self.applications_close_at)
         )
 
+    @property
+    def application_fee_major(self) -> float:
+        minor = self.application_fee_minor if self.application_fee_minor is not None else 5000
+        return round(minor / 100.0, 2)
+
     def to_dict(self, include_details: bool = False):
         data = {
             "id": self.id,
@@ -102,6 +108,8 @@ class Competition(db.Model):
             "allow_custom_quantity": self.allow_custom_quantity,
             "unit_vote_price_minor": self.unit_vote_price_minor,
             "unit_vote_price_major": round(self.unit_vote_price_minor / 100.0, 2),
+            "application_fee_minor": self.application_fee_minor if self.application_fee_minor is not None else 5000,
+            "application_fee_major": round((self.application_fee_minor if self.application_fee_minor is not None else 5000) / 100.0, 2),
             "min_vote_quantity": self.min_vote_quantity,
             "max_vote_quantity_per_order": self.max_vote_quantity_per_order,
             "max_votes_per_day_per_contact": self.max_votes_per_day_per_contact,

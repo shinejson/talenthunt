@@ -224,6 +224,29 @@ def list_competition_nominees(slug: str):
     return _query_public_nominees(competition=comp)
 
 
+@public_bp.get("/categories")
+def list_public_categories():
+    comp_slug = request.args.get("competition")
+    q = Category.query.join(Competition, Category.competition_id == Competition.id).filter(
+        Competition.status.notin_(["DRAFT", "ARCHIVED"]),
+        Category.status == "ACTIVE",
+    )
+    if comp_slug:
+        q = q.filter(Competition.slug == comp_slug)
+    categories = q.order_by(Category.name.asc()).all()
+
+    data = []
+    for cat in categories:
+        cnt = Nominee.query.filter(
+            Nominee.category_id == cat.id,
+            Nominee.status.notin_(["PENDING", "SUSPENDED"]),
+        ).count()
+        cat_dict = cat.to_dict()
+        cat_dict["nominee_count"] = cnt
+        data.append(cat_dict)
+    return api_success(data)
+
+
 @public_bp.get("/nominees")
 def list_all_public_nominees():
     comp_slug = request.args.get("competition")
