@@ -19,10 +19,10 @@
   </div>
 
   <!-- Session Inactivity Warning Alert Bar -->
-  <div class="session-warning-bar" ng-if="auth.state.inactivityWarning" style="position:fixed;top:0;left:0;right:0;z-index:99999;background:#b91c1c;color:#fff;padding:12px 24px;display:flex;align-items:center;justify-content:space-between;box-shadow:0 4px 14px rgba(0,0,0,0.35);font-size:0.95rem;animation:pulseWarning 2s infinite ease-in-out;">
+  <div class="session-warning-bar" ng-cloak ng-if="auth.state.inactivityWarning" style="position:fixed;top:0;left:0;right:0;z-index:99999;background:#b91c1c;color:#fff;padding:12px 24px;display:flex;align-items:center;justify-content:space-between;box-shadow:0 4px 14px rgba(0,0,0,0.35);font-size:0.95rem;animation:pulseWarning 2s infinite ease-in-out;">
     <div style="display:flex;align-items:center;gap:10px;">
       <span style="font-size:1.25rem;">⚠️</span>
-      <span><strong>Session Inactivity Warning:</strong> You have been idle. For your account security, you will be signed out in <strong style="text-decoration:underline;font-size:1.05rem;">{{ auth.state.inactivitySecondsLeft }}</strong>s.</span>
+      <span><strong>Session Inactivity Warning:</strong> You have been idle. For your account security, you will be signed out in <strong style="text-decoration:underline;font-size:1.05rem;" ng-bind="auth.state.inactivitySecondsLeft"></strong>s.</span>
     </div>
     <div style="display:flex;gap:10px;align-items:center;">
       <button type="button" class="btn btn-sm" ng-click="auth.extendSession()" style="background:#fff;color:#b91c1c;font-weight:700;border:none;padding:6px 16px;border-radius:4px;cursor:pointer;">Stay Signed In</button>

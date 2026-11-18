@@ -6,9 +6,36 @@
       function (AuthService, PermissionsService, ApiService, ToastService) {
         var vm = this;
         vm.perms = PermissionsService;
-        var u = AuthService.state.user || {};
-        vm.user = u;
-        vm.userForm = { full_name: u.full_name || '', location: u.location || '', bio: u.bio || '' };
+        vm.saving = false;
+
+        function syncUserForm(user) {
+          vm.user = user || {};
+          var dob = null;
+          if (vm.user.date_of_birth) {
+            var parts = String(vm.user.date_of_birth).split('-');
+            if (parts.length === 3) {
+              dob = new Date(parseInt(parts[0], 10), parseInt(parts[1], 10) - 1, parseInt(parts[2], 10));
+            }
+          }
+          vm.userForm = {
+            full_name: vm.user.full_name || '',
+            location: vm.user.location || '',
+            bio: vm.user.bio || '',
+            date_of_birth: dob,
+            is_group: !!vm.user.is_group,
+            group_name: vm.user.group_name || '',
+            group_member_count: vm.user.group_member_count || null
+          };
+          vm.profileImage = vm.user.profile_image || null;
+        }
+
+        syncUserForm(AuthService.state.user);
+        if (AuthService.isAuthenticated()) {
+          AuthService.refreshMe().then(function (res) {
+            if (res && res.user) syncUserForm(res.user);
+          });
+        }
+
         vm.nomineeForm = null;
 
         if (PermissionsService.isNominee()) {
@@ -25,10 +52,39 @@
         }
 
         vm.saveAccount = function () {
-          ApiService.patch('/auth/profile', vm.userForm).then(function () {
-            AuthService.refreshMe();
+          var dobStr = null;
+          if (vm.userForm.date_of_birth) {
+            if (vm.userForm.date_of_birth instanceof Date && !isNaN(vm.userForm.date_of_birth.getTime())) {
+              var y = vm.userForm.date_of_birth.getFullYear();
+              var m = String(vm.userForm.date_of_birth.getMonth() + 1).padStart(2, '0');
+              var d = String(vm.userForm.date_of_birth.getDate()).padStart(2, '0');
+              dobStr = y + '-' + m + '-' + d;
+            } else if (typeof vm.userForm.date_of_birth === 'string') {
+              dobStr = vm.userForm.date_of_birth;
+            }
+          }
+
+          var payload = {
+            full_name: vm.userForm.full_name,
+            location: vm.userForm.location,
+            bio: vm.userForm.bio,
+            date_of_birth: dobStr,
+            is_group: !!vm.userForm.is_group,
+            group_name: vm.userForm.is_group ? (vm.userForm.group_name || '') : null,
+            group_member_count: vm.userForm.is_group ? (Number(vm.userForm.group_member_count) || 1) : null
+          };
+
+          vm.saving = true;
+          ApiService.patch('/auth/profile', payload).then(function (res) {
+            vm.saving = false;
+            AuthService.refreshMe().then(function (meRes) {
+              if (meRes && meRes.user) syncUserForm(meRes.user);
+            });
             ToastService.success('Account profile updated.');
-          }, function (err) { ToastService.error(err.message); });
+          }, function (err) {
+            vm.saving = false;
+            ToastService.error(err.message || 'Failed to update account profile.');
+          });
         };
 
         vm.saveNominee = function () {
@@ -254,18 +310,32 @@
         '  <th-portal-nav></th-portal-nav>',
         '  <div>',
         '    <div class="card mb-3">',
-        '      <div ng-if="vm.user.profile_image" style="display:flex;align-items:center;gap:12px;margin-bottom:12px;">',
-        '        <img ng-src="{{ vm.user.profile_image.url }}" alt="Profile image" style="width:64px;height:64px;border-radius:50%;object-fit:cover;border:2px solid var(--border);" />',
-        '        <div><strong>Professional Profile Image</strong><div class="muted" style="font-size:0.85rem;">Uploaded on your account.</div></div>',
+        '      <div class="flex-between mb-2">',
+        '        <h2 style="margin:0;">Account Profile</h2>',
+        '        <span class="status-badge badge-info" ng-if="vm.user.roles && vm.user.roles.length">Roles: {{ vm.user.roles.join(", ") }}</span>',
         '      </div>',
-        '      <h2 style="margin-top:0;">Account Profile</h2>',
+        '      <div class="form-group mb-3">',
+        '        <th-profile-image-field asset="vm.profileImage"></th-profile-image-field>',
+        '      </div>',
         '      <form ng-submit="vm.saveAccount()">',
         '        <div class="grid-2">',
-        '          <div class="form-group"><label class="form-label">Full Name</label><input type="text" class="form-control" ng-model="vm.userForm.full_name" required /></div>',
-        '          <div class="form-group"><label class="form-label">City / Region</label><input type="text" class="form-control" ng-model="vm.userForm.location" /></div>',
+        '          <div class="form-group"><label class="form-label">Full Name *</label><input type="text" class="form-control" ng-model="vm.userForm.full_name" required /></div>',
+        '          <div class="form-group"><label class="form-label">City / Region</label><input type="text" class="form-control" ng-model="vm.userForm.location" placeholder="e.g. Accra, Greater Accra" /></div>',
         '        </div>',
-        '        <div class="form-group"><label class="form-label">Personal Bio</label><textarea class="form-control" ng-model="vm.userForm.bio"></textarea></div>',
-        '        <button type="submit" class="btn btn-primary">Save Account Details</button>',
+        '        <div class="grid-2">',
+        '          <div class="form-group"><label class="form-label">Date of Birth</label><input type="date" class="form-control" ng-model="vm.userForm.date_of_birth" /><span class="muted" style="font-size:0.8rem;">Used to verify applicant age and minor eligibility.</span></div>',
+        '          <div class="form-group"><label class="form-label">Email Address (Read-Only)</label><input type="email" class="form-control" ng-model="vm.user.email" disabled style="background:var(--bg-subtle);" /></div>',
+        '        </div>',
+        '        <div class="form-group"><label class="form-label">Personal / Artistic Bio</label><textarea class="form-control" ng-model="vm.userForm.bio" placeholder="Tell us about yourself, your talent background, and aspirations..."></textarea></div>',
+        '        <div class="card mb-3" style="background:var(--bg-subtle);padding:14px;border-radius:8px;">',
+        '          <div class="checkbox-row mb-1"><input type="checkbox" id="profileGroupChk" ng-model="vm.userForm.is_group" /><label for="profileGroupChk" style="font-weight:600;">I am performing / applying as a Group (band, dance troupe, duo, choir)</label></div>',
+        '          <div class="grid-2" ng-if="vm.userForm.is_group" style="margin-top:10px;">',
+        '            <div class="form-group"><label class="form-label">Official Group Name *</label><input type="text" class="form-control" ng-model="vm.userForm.group_name" placeholder="e.g. The Accra Beats" ng-required="vm.userForm.is_group" /></div>',
+        '            <div class="form-group"><label class="form-label">Number of Members *</label><input type="number" class="form-control" ng-model="vm.userForm.group_member_count" min="1" placeholder="e.g. 5" ng-required="vm.userForm.is_group" /></div>',
+        '          </div>',
+        '          <div class="muted" ng-if="vm.userForm.is_group" style="font-size:0.85rem;margin-top:4px;">The group name will appear on your public nominee profile and ballots.</div>',
+        '        </div>',
+        '        <button type="submit" class="btn btn-primary" ng-disabled="vm.saving">{{ vm.saving ? "Saving..." : "Save Account Details" }}</button>',
         '      </form>',
         '    </div>',
         '    <div class="card" ng-if="vm.nomineeForm">',

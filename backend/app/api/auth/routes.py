@@ -1,10 +1,5 @@
-<<<<<<< HEAD
-from flask import Blueprint, current_app, g, request
-=======
 from datetime import date
-
-from flask import Blueprint, current_app, request
->>>>>>> 6dc7c3936862ba39081424c83b15d54cbd9d73e7
+from flask import Blueprint, current_app, g, request
 
 from app.extensions import db, limiter
 from app.integrations.storage.local_storage import save_uploaded_profile_image
