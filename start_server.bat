@@ -7,7 +7,7 @@ echo StageLight Talent Hunt ^& Voting Platform Server
 echo ==========================================================
 
 if not exist ".venv\Scripts\python.exe" (
-    echo [ERROR] Python virtual environment (.venv) not found!
+    echo [ERROR] Python virtual environment ^(.venv^) not found!
     echo Please set up your environment by running:
     echo   python -m venv .venv
     echo   .venv\Scripts\pip install -r backend\requirements.txt

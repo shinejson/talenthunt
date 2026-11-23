@@ -6,6 +6,8 @@ COMPETITION_STATUSES = {
     "DRAFT",
     "PUBLISHED",
     "APPLICATIONS_OPEN",
+    "APPLICATIONS_CLOSED",
+    "SCHEDULED",
     "REVIEW",
     "VOTING",
     "RESULTS_PENDING",
@@ -13,7 +15,7 @@ COMPETITION_STATUSES = {
     "ARCHIVED",
 }
 
-APPLICATION_ENTRY_STATUSES = ("APPLICATIONS_OPEN", "PUBLISHED", "VOTING")
+APPLICATION_ENTRY_STATUSES = ("APPLICATIONS_OPEN", "PUBLISHED", "VOTING", "SCHEDULED")
 
 ROUND_STATUSES = {
     "DRAFT",
@@ -177,7 +179,9 @@ class Round(db.Model):
 
     def is_voting_window_open(self, now=None) -> bool:
         now = now or utcnow()
-        if self.status != "OPEN":
+        if self.status not in ("OPEN", "SCHEDULED"):
+            return False
+        if self.status == "SCHEDULED" and not self.voting_opens_at:
             return False
         if self.voting_opens_at and now < self.voting_opens_at:
             return False

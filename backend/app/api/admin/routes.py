@@ -22,6 +22,13 @@ from app.services.ad_service import get_ad_settings
 from app.services.audit_service import log_audit
 from app.services.auth_service import set_user_roles
 from app.services.elimination_service import finalise_round_elimination, preview_round_elimination
+from app.services.judging_service import (
+    get_judging_competitions_and_rounds,
+    get_round_nominees_for_judging,
+    get_round_tally_sheet,
+    save_judge_score,
+    sync_round_tally_scores,
+)
 from app.services.nomination_service import (
     decide_application,
     ensure_nominee_in_round,
@@ -45,7 +52,7 @@ from app.services.voting_service import create_vote_adjustment, get_incident_ban
 from app.tasks.jobs import reconcile_all_pending_payments
 from app.utils.pagination import apply_sort, paginate_query
 from app.utils.responses import api_success
-from app.utils.security import new_uuid, slugify
+from app.utils.security import hash_password, new_uuid, slugify
 from app.utils.time_utils import iso_utc, parse_iso_utc, utcnow
 
 admin_bp = Blueprint("admin", __name__, url_prefix="/admin")
@@ -438,6 +445,69 @@ def admin_update_competition(comp_id: str):
     return api_success(comp.to_dict(include_details=True))
 
 
+@admin_bp.post("/competitions/<comp_id>/application-window")
+@roles_required("COMPETITION_MANAGER")
+def admin_set_competition_application_window(comp_id: str):
+    actor = get_current_user()
+    comp = db.session.get(Competition, comp_id)
+    if not comp:
+        raise DomainError("NOT_FOUND", "Competition not found.", 404)
+    payload = request.get_json(silent=True) or {}
+    action = (payload.get("action") or "set_deadlines").lower().strip()
+    before = {
+        "status": comp.status,
+        "applications_open_at": iso_utc(comp.applications_open_at),
+        "applications_close_at": iso_utc(comp.applications_close_at),
+    }
+
+    now = utcnow()
+    if action == "open":
+        comp.status = "APPLICATIONS_OPEN"
+        if not comp.applications_open_at or comp.applications_open_at > now:
+            comp.applications_open_at = now
+        if "applications_close_at" in payload:
+            comp.applications_close_at = parse_iso_utc(payload["applications_close_at"])
+        elif comp.applications_close_at and comp.applications_close_at <= now:
+            comp.applications_close_at = None
+    elif action == "close":
+        comp.applications_close_at = now
+        comp.status = "APPLICATIONS_CLOSED"
+    elif action in ("schedule", "set_deadlines"):
+        if "applications_open_at" in payload:
+            comp.applications_open_at = parse_iso_utc(payload["applications_open_at"])
+        if "applications_close_at" in payload:
+            comp.applications_close_at = parse_iso_utc(payload["applications_close_at"])
+        if "status" in payload and payload["status"]:
+            st = payload["status"].upper()
+            if st in COMPETITION_STATUSES:
+                comp.status = st
+        else:
+            if comp.applications_close_at and comp.applications_close_at <= now:
+                comp.status = "APPLICATIONS_CLOSED"
+            elif comp.applications_open_at and comp.applications_open_at > now:
+                comp.status = "SCHEDULED"
+            else:
+                comp.status = "APPLICATIONS_OPEN"
+    else:
+        raise DomainError("INVALID_ACTION", f"Unknown application window action '{action}'.", 422)
+
+    log_audit(
+        actor_user_id=actor.id,
+        action="COMPETITION_APPLICATION_WINDOW_UPDATED",
+        entity_type="competition",
+        entity_id=comp.id,
+        before=before,
+        after={
+            "status": comp.status,
+            "applications_open_at": iso_utc(comp.applications_open_at),
+            "applications_close_at": iso_utc(comp.applications_close_at),
+            "accepts_applications": comp.accepts_applications(),
+        },
+    )
+    db.session.commit()
+    return api_success(comp.to_dict(include_details=True))
+
+
 # --- Categories ---
 @admin_bp.get("/categories")
 @roles_required("COMPETITION_MANAGER", "REVIEWER", "MODERATOR", "FINANCE_OFFICER")
@@ -615,6 +685,69 @@ def admin_update_round(round_id: str):
         entity_id=rnd.id,
         before=before,
         after={"status": rnd.status, "results_published": rnd.results_published},
+    )
+    db.session.commit()
+    return api_success(rnd.to_dict())
+
+
+@admin_bp.post("/rounds/<round_id>/voting-window")
+@roles_required("COMPETITION_MANAGER")
+def admin_set_round_voting_window(round_id: str):
+    actor = get_current_user()
+    rnd = db.session.get(Round, round_id)
+    if not rnd:
+        raise DomainError("NOT_FOUND", "Round not found.", 404)
+    payload = request.get_json(silent=True) or {}
+    action = (payload.get("action") or "set_deadlines").lower().strip()
+    before = {
+        "status": rnd.status,
+        "voting_opens_at": iso_utc(rnd.voting_opens_at),
+        "voting_closes_at": iso_utc(rnd.voting_closes_at),
+    }
+
+    now = utcnow()
+    if action == "open":
+        rnd.status = "OPEN"
+        if not rnd.voting_opens_at or rnd.voting_opens_at > now:
+            rnd.voting_opens_at = now
+        if "voting_closes_at" in payload:
+            rnd.voting_closes_at = parse_iso_utc(payload["voting_closes_at"])
+        elif rnd.voting_closes_at and rnd.voting_closes_at <= now:
+            rnd.voting_closes_at = None
+    elif action == "close":
+        rnd.status = "CLOSED"
+        rnd.voting_closes_at = now
+    elif action in ("schedule", "set_deadlines"):
+        if "voting_opens_at" in payload:
+            rnd.voting_opens_at = parse_iso_utc(payload["voting_opens_at"])
+        if "voting_closes_at" in payload:
+            rnd.voting_closes_at = parse_iso_utc(payload["voting_closes_at"])
+        if "status" in payload and payload["status"]:
+            st = payload["status"].upper()
+            if st in ROUND_STATUSES:
+                rnd.status = st
+        else:
+            if rnd.voting_closes_at and rnd.voting_closes_at <= now:
+                rnd.status = "CLOSED"
+            elif rnd.voting_opens_at and rnd.voting_opens_at > now:
+                rnd.status = "SCHEDULED"
+            else:
+                rnd.status = "OPEN"
+    else:
+        raise DomainError("INVALID_ACTION", f"Unknown voting window action '{action}'.", 422)
+
+    log_audit(
+        actor_user_id=actor.id,
+        action="ROUND_VOTING_WINDOW_UPDATED",
+        entity_type="round",
+        entity_id=rnd.id,
+        before=before,
+        after={
+            "status": rnd.status,
+            "voting_opens_at": iso_utc(rnd.voting_opens_at),
+            "voting_closes_at": iso_utc(rnd.voting_closes_at),
+            "is_voting_open": rnd.is_voting_window_open(),
+        },
     )
     db.session.commit()
     return api_success(rnd.to_dict())
@@ -1707,7 +1840,15 @@ def admin_finalise_elimination(round_id: str):
 @admin_bp.get("/users")
 @roles_required("SUPER_ADMIN")
 def admin_list_users():
+    admin_roles = ["SUPER_ADMIN", "COMPETITION_MANAGER", "FINANCE_OFFICER", "MODERATOR", "REVIEWER"]
+    group = (request.args.get("group") or "").strip().lower()
+
     q = User.query
+    if group in ("admin", "staff"):
+        q = q.filter(User.user_roles.any(UserRole.role.has(Role.name.in_(admin_roles))))
+    elif group in ("applicant", "applicants", "contestant", "contestants"):
+        q = q.filter(~User.user_roles.any(UserRole.role.has(Role.name.in_(admin_roles))))
+
     if request.args.get("status"):
         q = q.filter_by(status=request.args["status"].strip().upper())
     if request.args.get("role"):
@@ -1739,6 +1880,11 @@ def admin_list_users():
     )
     items, meta = paginate_query(q, lambda u: u.to_dict(include_private=True), default_per_page=25)
     meta["available_roles"] = list(ROLE_DEFINITIONS.keys())
+    meta["admin_roles"] = admin_roles
+    meta["applicant_roles"] = [r for r in ROLE_DEFINITIONS.keys() if r not in admin_roles]
+    meta["admin_count"] = User.query.filter(User.user_roles.any(UserRole.role.has(Role.name.in_(admin_roles)))).count()
+    meta["applicant_count"] = User.query.filter(~User.user_roles.any(UserRole.role.has(Role.name.in_(admin_roles)))).count()
+    meta["current_group"] = group if group else "all"
     return api_success(items, meta)
 
 
@@ -1778,6 +1924,34 @@ def admin_update_user_status(user_id: str):
     log_audit(actor_user_id=actor.id, action="USER_STATUS_CHANGED", entity_type="user", entity_id=target.id, before=before, after={"status": new_status})
     db.session.commit()
     return api_success(target.to_dict(include_private=True))
+
+
+@admin_bp.post("/users/<user_id>/reset-password")
+@roles_required("SUPER_ADMIN")
+def admin_reset_user_password(user_id: str):
+    actor = get_current_user()
+    target = db.session.get(User, user_id)
+    if not target:
+        raise DomainError("NOT_FOUND", "User not found.", 404)
+    payload = request.get_json(silent=True) or {}
+    new_password = (payload.get("password") or "").strip()
+    if not new_password or len(new_password) < 8:
+        raise DomainError("VALIDATION_ERROR", "Password must be at least 8 characters long.", 422)
+
+    target.password_hash = hash_password(new_password)
+    target.token_version += 1
+    log_audit(
+        actor_user_id=actor.id,
+        action="USER_PASSWORD_RESET_BY_ADMIN",
+        entity_type="user",
+        entity_id=target.id,
+        after={"admin_user_id": actor.id, "target_email": target.email},
+    )
+    db.session.commit()
+    return api_success({
+        "message": f"Password for {target.full_name} has been reset successfully.",
+        "user": target.to_dict(include_private=True),
+    })
 
 
 # --- Moderation & Support Tickets ---
@@ -2791,3 +2965,63 @@ def admin_convert_partnership_inquiry(inquiry_id: str):
         },
         status_code=201,
     )
+
+
+# ---------------------------------------------------------------------------
+# Judges Scoring, Video Evaluation & Tally Sheet Endpoints
+# ---------------------------------------------------------------------------
+
+@admin_bp.get("/judging/competitions-and-rounds")
+@roles_required("REVIEWER", "COMPETITION_MANAGER", "MODERATOR")
+def admin_get_judging_competitions_and_rounds():
+    """Lists competitions and their respective rounds for the judging console."""
+    data = get_judging_competitions_and_rounds()
+    return api_success(data)
+
+
+@admin_bp.get("/judging/round/<round_id>/nominees")
+@roles_required("REVIEWER", "COMPETITION_MANAGER", "MODERATOR")
+def admin_get_round_nominees_for_judging(round_id: str):
+    """Retrieves all nominees in a round, their performance video, and the current judge's scorecard."""
+    current_judge = get_current_user()
+    judge_id = current_judge.id if current_judge else None
+    data = get_round_nominees_for_judging(round_id, current_judge_id=judge_id)
+    return api_success(data)
+
+
+@admin_bp.post("/judging/score")
+@roles_required("REVIEWER", "COMPETITION_MANAGER")
+def admin_submit_judge_score():
+    """Submits or updates a judge's scorecard for a nominee in a competition round."""
+    current_judge = get_current_user()
+    payload = request.get_json(silent=True) or {}
+    round_id = payload.get("round_id")
+    nominee_id = payload.get("nominee_id")
+    if not round_id or not nominee_id:
+        raise DomainError("MISSING_FIELDS", "round_id and nominee_id are required.", 422)
+
+    result = save_judge_score(
+        round_id=round_id,
+        nominee_id=nominee_id,
+        judge_user_id=current_judge.id,
+        data=payload,
+    )
+    return api_success(result)
+
+
+@admin_bp.get("/judging/round/<round_id>/tally")
+@roles_required("REVIEWER", "COMPETITION_MANAGER", "MODERATOR", "FINANCE_OFFICER")
+def admin_get_round_tally_sheet(round_id: str):
+    """Retrieves the master tally score sheet for a round, including all judges' evaluations, criteria breakdown, and rankings."""
+    data = get_round_tally_sheet(round_id)
+    return api_success(data)
+
+
+@admin_bp.post("/judging/round/<round_id>/sync-tally")
+@roles_required("COMPETITION_MANAGER")
+def admin_sync_round_tally(round_id: str):
+    """Recalculates and synchronizes all consensus judge scores across the round entries."""
+    admin_user = get_current_user()
+    result = sync_round_tally_scores(round_id, actor_user=admin_user)
+    return api_success(result)
+

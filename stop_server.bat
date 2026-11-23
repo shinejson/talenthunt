@@ -18,4 +18,4 @@ if "%found%"=="0" (
 )
 
 echo.
-timeout /t 2 >nul
+ping -n 3 127.0.0.1 >nul

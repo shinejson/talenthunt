@@ -12,6 +12,7 @@
     '/admin/categories': { label: 'Categories', icon: 'layers' },
     '/admin/rounds': { label: 'Rounds & Packages', icon: 'clock' },
     '/admin/submissions': { label: 'Review Queue', icon: 'clipboard-check' },
+    '/admin/judging': { label: 'Judges Scoring & Tally Sheet', icon: 'award' },
     '/admin/nominees': { label: 'Nominees', icon: 'award' },
     '/admin/votes': { label: 'Vote Ledger', icon: 'book-ledger' },
     '/admin/orders': { label: 'Orders', icon: 'receipt' },
@@ -53,6 +54,7 @@
 
         '    <div class="side-nav-section-label" ng-if="$ctrl.perms.canReview() || $ctrl.perms.canModerate() || $ctrl.perms.canManageCompetition() || $ctrl.perms.canFinance()">Talent &amp; Trust</div>',
         '    <a ng-if="$ctrl.perms.canReview() || $ctrl.perms.canModerate()" href="/admin/submissions" ng-click="$ctrl.drawerOpen=false" ng-class="{active: $ctrl.is(\'/admin/submissions\')}"><th-icon name="clipboard-check" size="17"></th-icon><span>Review Queue</span></a>',
+        '    <a ng-if="$ctrl.perms.canReview() || $ctrl.perms.canManageCompetition()" href="/admin/judging" ng-click="$ctrl.drawerOpen=false" ng-class="{active: $ctrl.is(\'/admin/judging\')}"><th-icon name="award" size="17"></th-icon><span>Judge Scoring &amp; Tally</span></a>',
         '    <a ng-if="$ctrl.perms.canManageCompetition() || $ctrl.perms.canModerate() || $ctrl.perms.canFinance()" href="/admin/nominees" ng-click="$ctrl.drawerOpen=false" ng-class="{active: $ctrl.is(\'/admin/nominees\')}"><th-icon name="award" size="17"></th-icon><span>Nominees</span></a>',
         '    <a ng-if="$ctrl.perms.canManageCompetition() || $ctrl.perms.canModerate() || $ctrl.perms.canFinance()" href="/admin/sponsors-partners" ng-click="$ctrl.drawerOpen=false" ng-class="{active: $ctrl.is(\'/admin/sponsors-partners\')}"><th-icon name="handshake" size="17"></th-icon><span>Sponsors, Partners &amp; Supporters</span></a>',
         '    <a ng-if="$ctrl.perms.canModerate() || $ctrl.perms.canFinance()" href="/admin/moderation" ng-click="$ctrl.drawerOpen=false" ng-class="{active: $ctrl.is(\'/admin/moderation\')}"><th-icon name="shield-alert" size="17"></th-icon><span>Moderation &amp; Support</span></a>',
@@ -362,7 +364,7 @@
         }
 
         function onWindowResize() {
-          if (revChartInstance) revChartInstance.resize();
+          if (trendChartInstance) trendChartInstance.resize();
           if (catChartInstance) catChartInstance.resize();
           if (channelChartInstance) channelChartInstance.resize();
         }

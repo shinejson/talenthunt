@@ -1,7 +1,7 @@
 from app.models.application import APPLICATION_STATUSES, Application, ApplicationPayment, MediaAsset, Review, Submission
 from app.models.competition import COMPETITION_STATUSES, ROUND_STATUSES, Category, Competition, Round, VotePackage
 from app.models.elimination import EliminationResult, EliminationRun
-from app.models.nominee import NOMINEE_STATUSES, Nominee, RoundEntry
+from app.models.nominee import NOMINEE_STATUSES, JudgeScore, Nominee, RoundEntry
 from app.models.operations import AuditLog, ModerationReport, Notification, PlatformSetting, SupportTicket
 from app.models.partnership import (
     DEFAULT_COLLABORATION_TRACKS,
@@ -45,6 +45,7 @@ __all__ = [
     "NOMINEE_STATUSES",
     "Nominee",
     "RoundEntry",
+    "JudgeScore",
     "Order",
     "Payment",
     "VoteLedger",

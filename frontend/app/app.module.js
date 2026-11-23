@@ -8,6 +8,19 @@
   };
 
   angular.module('talentHuntApp', ['ngRoute', 'ngSanitize'])
+    .config(['$sceDelegateProvider', function ($sceDelegateProvider) {
+      $sceDelegateProvider.resourceUrlWhitelist([
+        'self',
+        'https://www.youtube.com/**',
+        'https://www.youtube-nocookie.com/**',
+        'https://player.vimeo.com/**',
+        'https://*.vimeo.com/**',
+        'https://w.soundcloud.com/**',
+        'https://soundcloud.com/**',
+        'https://**',
+        'http://**'
+      ]);
+    }])
     .filter('ghsCurrency', function () {
       return function (amountMajor, currencyCode) {
         var cur = currencyCode || 'GHS';
@@ -23,6 +36,11 @@
         return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
       };
     })
+    .filter('trustAsResourceUrl', ['$sce', function ($sce) {
+      return function (url) {
+        return url ? $sce.trustAsResourceUrl(url) : '';
+      };
+    }])
     .factory('AdminFilterUtils', function () {
       function formatDate(d) {
         if (!d) return undefined;
@@ -95,12 +113,17 @@
           var isPortal = (p === '/portal' || p.indexOf('/portal/') === 0) && !AUTH_ONLY_PORTAL_PATHS[p];
           $rootScope.isAdminRoute = isAdmin;
           $rootScope.hasFixedSidebar = isAdmin || isPortal;
+          $rootScope.isAuthPage = p === '/portal/login' || !!AUTH_ONLY_PORTAL_PATHS[p];
         }
 
         AuthService.bootstrap();
         syncLayoutFlags();
 
         $rootScope.$on('$routeChangeStart', function (event, next) {
+          if (next && next.$$route && next.$$route.originalPath) {
+            var targetPath = next.$$route.originalPath;
+            $rootScope.isAuthPage = targetPath === '/portal/login' || !!AUTH_ONLY_PORTAL_PATHS[targetPath];
+          }
           if (!next || !next.$$route) return;
           var routeData = next.$$route;
           if (routeData.requireAuth && !AuthService.isAuthenticated()) {

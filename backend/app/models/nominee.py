@@ -159,3 +159,48 @@ class RoundEntry(db.Model):
             "final_total_snapshot": self.final_total_snapshot,
             "created_at": iso_utc(self.created_at),
         }
+
+
+class JudgeScore(db.Model):
+    __tablename__ = "judge_scores"
+    __table_args__ = (
+        db.UniqueConstraint("round_id", "nominee_id", "judge_id", name="uq_judge_scores_round_nominee_judge"),
+        db.Index("ix_judge_scores_round_nominee", "round_id", "nominee_id"),
+        db.Index("ix_judge_scores_judge", "judge_id"),
+    )
+
+    id = db.Column(db.String(36), primary_key=True, default=new_uuid)
+    round_id = db.Column(db.String(36), db.ForeignKey("rounds.id", ondelete="CASCADE"), nullable=False, index=True)
+    nominee_id = db.Column(db.String(36), db.ForeignKey("nominees.id", ondelete="CASCADE"), nullable=False, index=True)
+    judge_id = db.Column(db.String(36), db.ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+
+    criteria_scores = db.Column(db.JSON, nullable=False, default=dict)
+    total_score = db.Column(db.Float, nullable=False, default=0.0)
+    remarks = db.Column(db.Text, nullable=True)
+    is_final = db.Column(db.Boolean, nullable=False, default=True)
+
+    created_at = db.Column(db.DateTime, nullable=False, default=utcnow)
+    updated_at = db.Column(db.DateTime, nullable=False, default=utcnow, onupdate=utcnow)
+
+    round = db.relationship("Round", lazy="joined")
+    nominee = db.relationship("Nominee", lazy="joined")
+    judge = db.relationship("User", lazy="joined")
+
+    def to_dict(self):
+        return {
+            "id": self.id,
+            "round_id": self.round_id,
+            "round_name": self.round.name if self.round else None,
+            "nominee_id": self.nominee_id,
+            "nominee_name": self.nominee.public_name if self.nominee else None,
+            "judge_id": self.judge_id,
+            "judge_name": self.judge.full_name if self.judge else "Judge",
+            "judge_email": self.judge.email if self.judge else None,
+            "criteria_scores": self.criteria_scores or {},
+            "total_score": round(self.total_score, 2),
+            "remarks": self.remarks or "",
+            "is_final": self.is_final,
+            "created_at": iso_utc(self.created_at),
+            "updated_at": iso_utc(self.updated_at),
+        }
+

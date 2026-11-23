@@ -55,6 +55,7 @@
         .when('/admin/categories', { templateUrl: 'admin/categories.html', controller: 'AdminCategoriesController', controllerAs: 'vm', requireAuth: true, requireRoles: MGR_ROLES })
         .when('/admin/rounds', { templateUrl: 'admin/rounds.html', controller: 'AdminRoundsController', controllerAs: 'vm', requireAuth: true, requireRoles: MGR_ROLES })
         .when('/admin/submissions', { templateUrl: 'admin/submissions.html', controller: 'AdminSubmissionsController', controllerAs: 'vm', requireAuth: true, requireRoles: ['SUPER_ADMIN', 'COMPETITION_MANAGER', 'REVIEWER', 'MODERATOR'] })
+        .when('/admin/judging', { templateUrl: 'admin/judging.html', controller: 'AdminJudgingController', controllerAs: 'vm', requireAuth: true, requireRoles: ['SUPER_ADMIN', 'COMPETITION_MANAGER', 'REVIEWER', 'MODERATOR'] })
         .when('/admin/nominees', { templateUrl: 'admin/nominees.html', controller: 'AdminNomineesController', controllerAs: 'vm', requireAuth: true, requireRoles: ['SUPER_ADMIN', 'COMPETITION_MANAGER', 'MODERATOR', 'FINANCE_OFFICER'] })
         .when('/admin/sponsors-partners', { templateUrl: 'admin/sponsors-partners.html', controller: 'AdminSponsorsPartnersController', controllerAs: 'vm', requireAuth: true, requireRoles: ['SUPER_ADMIN', 'COMPETITION_MANAGER', 'MODERATOR', 'FINANCE_OFFICER'] })
         .when('/admin/accounting', { templateUrl: 'admin/accounting-overview.html', controller: 'AdminAccountingOverviewController', controllerAs: 'vm', requireAuth: true, requireRoles: FIN_ROLES })

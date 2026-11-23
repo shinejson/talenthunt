@@ -1,13 +1,21 @@
-<div class="container application-single application-page">
-  <section class="card application-panel" aria-labelledby="invitation-title">
-    <p class="application-received">NOMINEE PORTAL</p>
-    <h1 id="invitation-title">Set your portal password</h1>
+<div class="auth-card-wrap">
+  <div class="auth-brand-header">
+    <a href="/" class="brand-logo" title="StageLight Ghana Talent Hunt">
+      <span class="brand-mark">SL</span>
+      <span>StageLight</span>
+      <span class="ghana-stripe" title="Ghana"><span class="gh-r"></span><span class="gh-y"></span><span class="gh-g"></span></span>
+    </a>
+    <div class="muted mt-1" style="font-size:0.88rem;">Talent Hunt &amp; Verified Public Voting Platform</div>
+  </div>
+  <section class="card auth-card" aria-labelledby="invitation-title">
+    <p class="application-received" style="margin-top:0;">NOMINEE PORTAL</p>
+    <h1 id="invitation-title" style="margin:0 0 6px;font-size:1.5rem;">Set your portal password</h1>
     <div ng-if="!vm.validLink">
-      <p>This invitation link is missing, invalid, or expired. Open the original link from your nomination email. If it no longer works, <a href="/contact">contact support</a> for a new invitation.</p>
-      <a href="/portal/login">Already set a password? Sign in</a>
+      <p class="muted">This invitation link is missing, invalid, or expired. Open the original link from your nomination email. If it no longer works, <a href="/contact">contact support</a> for a new invitation.</p>
+      <a href="/portal/login" class="btn btn-secondary btn-block">Already set a password? Sign in</a>
     </div>
     <form ng-if="vm.validLink" ng-submit="vm.accept()">
-      <p>Choose a password, then use your application email to sign in.</p>
+      <p class="muted" style="font-size:0.9rem;margin-bottom:16px;">Choose a password, then use your application email to sign in.</p>
       <div ng-if="vm.error" class="alert alert-danger" role="alert">{{ vm.error }}</div>
       <div class="form-group">
         <label class="form-label" for="invite-password">New password (at least 8 characters)</label>
@@ -17,7 +25,13 @@
         <label class="form-label" for="invite-confirm">Confirm password</label>
         <input class="form-control" type="password" id="invite-confirm" ng-model="vm.confirm" ng-trim="false" autocomplete="new-password" minlength="8" maxlength="128" required />
       </div>
-      <button type="submit" class="btn btn-primary" ng-disabled="vm.loading">{{ vm.loading ? 'Setting password…' : 'Set password' }}</button>
+      <button type="submit" class="btn btn-lg btn-primary btn-block" ng-disabled="vm.loading">{{ vm.loading ? 'Setting password…' : 'Set password' }}</button>
     </form>
   </section>
+  <div class="auth-footer-links">
+    <a href="/portal/login">
+      <th-icon name="arrow-left" size="14"></th-icon>
+      <span>Back to Sign In</span>
+    </a>
+  </div>
 </div>

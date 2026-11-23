@@ -82,6 +82,13 @@ def create_app(config_object=None) -> Flask:
     flask_app.register_blueprint(payments_bp, url_prefix=f"{api_prefix}/payments")
     flask_app.register_blueprint(admin_bp, url_prefix=f"{api_prefix}/admin")
 
+    @flask_app.route("/invalid", methods=["GET", "HEAD", "POST"])
+    @flask_app.route("/invalid/", methods=["GET", "HEAD", "POST"])
+    @flask_app.route("/invalid/<path:subpath>", methods=["GET", "HEAD", "POST"])
+    @limiter.exempt
+    def handle_invalid_probe(subpath=None):
+        return ("", 204)
+
     @flask_app.get("/api/v1/health")
     @limiter.exempt
     def health_check():

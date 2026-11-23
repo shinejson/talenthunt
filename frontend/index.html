@@ -12,10 +12,10 @@
   <link rel="stylesheet" href="/styles/main.css" />
 </head>
 <body>
-  <div class="app-shell" ng-class="{'has-fixed-sidebar': hasFixedSidebar, 'is-admin-shell': isAdminRoute}">
-    <th-navbar></th-navbar>
+  <div class="app-shell" ng-class="{'has-fixed-sidebar': hasFixedSidebar, 'is-admin-shell': isAdminRoute, 'is-auth-page': isAuthPage}">
+    <th-navbar ng-if="!isAuthPage"></th-navbar>
     <main class="main-content" ng-view></main>
-    <th-footer></th-footer>
+    <th-footer ng-if="!isAuthPage"></th-footer>
   </div>
 
   <!-- Session Inactivity Warning Alert Bar -->
@@ -90,6 +90,7 @@
   <script src="/app/admin/competitions/admin-competitions.controller.js"></script>
   <script src="/app/admin/rounds/admin-rounds.controller.js"></script>
   <script src="/app/admin/submissions/admin-submissions.controller.js"></script>
+  <script src="/app/admin/judging/admin-judging.controller.js"></script>
   <script src="/app/admin/nominees/admin-nominees.controller.js"></script>
   <script src="/app/admin/sponsors/admin-sponsors-partners.controller.js"></script>
   <script src="/app/admin/accounting/admin-accounting.controller.js"></script>
