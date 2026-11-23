@@ -592,6 +592,7 @@
           ApiService.patch('/admin/settings', { basic_info: vm.basicInfo }).then(function () {
             vm.savingBasic = false;
             ToastService.success('Platform branding and basic info saved.');
+            $rootScope.$broadcast('platformInfoChanged');
           }, function (err) {
             vm.savingBasic = false;
             ToastService.error(err.message || 'Failed to save basic info.');
@@ -634,6 +635,7 @@
           ApiService.upload('/admin/settings/logo', file).then(function (res) {
             vm.basicInfo.logo_url = res.data.url;
             ToastService.success('Platform logo updated.');
+            $rootScope.$broadcast('platformInfoChanged');
           }, function (err) {
             ToastService.error(err.message || 'Logo upload failed.');
           });
@@ -647,6 +649,7 @@
             ToastService.success('Platform favicon updated.');
             var link = document.querySelector("link[rel='icon']");
             if (link) link.href = res.data.url;
+            $rootScope.$broadcast('platformInfoChanged');
           }, function (err) {
             ToastService.error(err.message || 'Favicon upload failed.');
           });
@@ -661,6 +664,7 @@
             ApiService.upload('/admin/settings/logo', assetOrFile).then(function (res) {
               vm.basicInfo.logo_url = res.data.url;
               ToastService.success('Logo uploaded.');
+              $rootScope.$broadcast('platformInfoChanged');
             }, function (err) { ToastService.error(err.message || 'Upload failed.'); });
           }
         };
@@ -674,6 +678,7 @@
             ApiService.upload('/admin/settings/favicon', assetOrFile).then(function (res) {
               vm.basicInfo.favicon_url = res.data.url;
               ToastService.success('Favicon uploaded.');
+              $rootScope.$broadcast('platformInfoChanged');
             }, function (err) { ToastService.error(err.message || 'Upload failed.'); });
           }
         };

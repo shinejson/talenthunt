@@ -29,10 +29,10 @@
         '  </div>',
         '</footer>',
 
-        '<!-- PUBLIC WEBSITE FOOTER -->',
-        '<footer class="site-footer" ng-if="!$ctrl.isAdmin" role="contentinfo">',
+        '<!-- PUBLIC & PORTAL WEBSITE FOOTER -->',
+        '<footer class="site-footer" ng-class="{\'portal-footer\': $ctrl.isPortal}" ng-if="!$ctrl.isAdmin" role="contentinfo">',
         '  <div class="container">',
-        '    <div class="footer-grid">',
+        '    <div class="footer-grid" ng-if="!$ctrl.isPortal">',
         '      <div>',
         '        <h4>StageLight Talent Hunt</h4>',
         '        <p>Ghana-first talent discovery, auditable public voting, verified Mobile Money &amp; Card payments, and transparent multi-round progression.</p>',
@@ -123,6 +123,7 @@
         function update() {
           var p = $location.path() || '/';
           vm.isAdmin = p === '/admin' || p.indexOf('/admin/') === 0;
+          vm.isPortal = p === '/portal' || p.indexOf('/portal/') === 0;
         }
 
         function loadSocials() {

@@ -640,6 +640,13 @@ th-icon,
   text-decoration: none !important;
 }
 
+.brand-logo-img {
+  max-height: 38px;
+  max-width: 180px;
+  object-fit: contain;
+  display: block;
+}
+
 .brand-mark {
   width: 34px;
   height: 34px;
@@ -2588,6 +2595,15 @@ table.dataTable tr:hover td.dt-empty {
   margin-top: 48px;
   font-size: 0.9rem;
 }
+.site-footer.portal-footer {
+  padding: 16px 0;
+  margin-top: auto;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+.site-footer.portal-footer .footer-bottom {
+  border-top: none;
+  padding-top: 0;
+}
 .footer-grid {
   display: grid;
   grid-template-columns: 1fr;
@@ -4189,6 +4205,12 @@ table.dataTable tr:hover td.dt-empty {
   font-weight: 700;
   font-size: 0.98rem;
   letter-spacing: -0.01em;
+}
+.admin-brand-logo-img {
+  max-height: 28px;
+  max-width: 140px;
+  object-fit: contain;
+  display: block;
 }
 .admin-brand-icon {
   width: 26px;

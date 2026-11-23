@@ -36,6 +36,7 @@
         .when('/terms', { templateUrl: 'public/info.html', controller: 'InfoPagesController', controllerAs: 'vm' })
 
         // Applicant & Nominee Portal (Section 7.2)
+        .when('/portal', { redirectTo: '/portal/dashboard' })
         .when('/portal/login', { templateUrl: 'portal/login.html', controller: 'PortalLoginController', controllerAs: 'vm' })
         .when('/portal/register', { redirectTo: '/apply' })
         .when('/portal/accept-invitation', { templateUrl: 'app/portal/dashboard/accept-invitation.html', controller: 'PortalInvitationController', controllerAs: 'vm' })

@@ -7,9 +7,12 @@ REPO_ROOT = os.path.dirname(BASE_DIR)
 
 class Config:
     SECRET_KEY = os.environ.get("SECRET_KEY", "dev-talent-hunt-secret-change-me")
-    SQLALCHEMY_DATABASE_URI = os.environ.get(
-        "DATABASE_URL",
-        "sqlite:///" + os.path.join(BASE_DIR, "talent_hunt.db"),
+    _raw_db_url = os.environ.get("DATABASE_URL")
+    if _raw_db_url and _raw_db_url.startswith("postgres://"):
+        _raw_db_url = _raw_db_url.replace("postgres://", "postgresql://", 1)
+
+    SQLALCHEMY_DATABASE_URI = _raw_db_url or (
+        "sqlite:///" + os.path.join(BASE_DIR, "talent_hunt.db")
     )
     SQLALCHEMY_TRACK_MODIFICATIONS = False
     SQLALCHEMY_ENGINE_OPTIONS = {

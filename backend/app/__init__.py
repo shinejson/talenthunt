@@ -143,6 +143,20 @@ def create_app(config_object=None) -> Flask:
 
     frontend_dir = flask_app.config.get("FRONTEND_DIR")
 
+    @flask_app.get("/favicon.ico")
+    @limiter.exempt
+    def serve_favicon():
+        from app.models.setting import Setting
+        from flask import redirect
+        fav_setting = Setting.query.filter_by(key="platform_basic_info").first()
+        if fav_setting and isinstance(fav_setting.value_json, dict):
+            fav_url = fav_setting.value_json.get("favicon_url")
+            if fav_url:
+                return redirect(fav_url, code=302)
+        if frontend_dir and os.path.isfile(os.path.join(frontend_dir, "favicon.ico")):
+            return send_from_directory(frontend_dir, "favicon.ico")
+        return ("", 204)
+
     @flask_app.get("/")
     @limiter.exempt
     def serve_spa_index():

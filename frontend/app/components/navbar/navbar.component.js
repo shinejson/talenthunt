@@ -40,9 +40,11 @@
         '        <button type="button" class="admin-mobile-toggle" ng-click="$ctrl.toggleSidebarDrawer()" aria-label="Toggle Admin Sidebar Menu">',
         '          <th-icon name="menu" size="18"></th-icon>',
         '        </button>',
-        '        <a href="/admin" class="admin-brand-pill" title="StageLight Admin Console">',
-        '          <span class="admin-brand-icon"><th-icon name="shield" size="14"></th-icon></span>',
-        '          <span class="admin-brand-text">StageLight <span class="admin-brand-badge">Admin</span></span>',
+        '        <a href="/admin" class="admin-brand-pill" title="{{ $ctrl.platformName }} Admin Console">',
+        '          <img ng-if="$ctrl.logoUrl" ng-src="{{ $ctrl.logoUrl }}" alt="{{ $ctrl.platformName }}" class="admin-brand-logo-img" />',
+        '          <span ng-if="!$ctrl.logoUrl" class="admin-brand-icon"><th-icon name="shield" size="14"></th-icon></span>',
+        '          <span ng-if="!$ctrl.logoUrl" class="admin-brand-text">{{ $ctrl.platformName }}</span>',
+        '          <span class="admin-brand-badge">Admin</span>',
         '        </a>',
         '        <div class="admin-breadcrumbs">',
         '          <span class="admin-bc-sep">/</span>',
@@ -108,9 +110,10 @@
         '    </div>',
         '    <div class="container navbar-inner">',
         '      <a href="/" class="brand-logo" ng-click="$ctrl.menuOpen = false">',
-        '        <span class="brand-mark">SL</span>',
-        '        <span>StageLight</span>',
-        '        <span class="ghana-stripe" title="Ghana"><span class="gh-r"></span><span class="gh-y"></span><span class="gh-g"></span></span>',
+        '        <img ng-if="$ctrl.logoUrl" ng-src="{{ $ctrl.logoUrl }}" alt="{{ $ctrl.platformName }}" class="brand-logo-img" />',
+        '        <span ng-if="!$ctrl.logoUrl" class="brand-mark">SL</span>',
+        '        <span ng-if="!$ctrl.logoUrl">{{ $ctrl.platformName || "StageLight" }}</span>',
+        '        <span ng-if="!$ctrl.logoUrl" class="ghana-stripe" title="Ghana"><span class="gh-r"></span><span class="gh-y"></span><span class="gh-g"></span></span>',
         '      </a>',
         '      <nav class="nav-links" aria-label="Primary Navigation">',
         '        <a href="/" ng-class="{active: $ctrl.isActive(\'/\')}"><th-icon name="home" size="16"></th-icon><span>Home</span></a>',
@@ -348,11 +351,36 @@
             }, 0, false);
           }
 
-          function fetchIncident() {
+          vm.logoUrl = null;
+          vm.faviconUrl = null;
+          vm.platformName = 'StageLight';
+
+          function updateFavicon(url) {
+            if (!url) return;
+            var link = document.getElementById('appFavicon') || document.querySelector("link[rel~='icon']");
+            if (!link) {
+              link = document.createElement('link');
+              link.id = 'appFavicon';
+              link.rel = 'icon';
+              document.head.appendChild(link);
+            }
+            link.href = url;
+          }
+
+          function fetchPlatformInfo() {
             ApiService.get('/public/info').then(function (res) {
-              vm.incident = res.data.incident_banner;
+              var data = (res && res.data) || {};
+              vm.incident = data.incident_banner;
+              vm.logoUrl = data.logo_url || (data.basic_info && data.basic_info.logo_url) || null;
+              vm.faviconUrl = data.favicon_url || (data.basic_info && data.basic_info.favicon_url) || null;
+              if (data.platform_name) {
+                vm.platformName = data.platform_name;
+              }
+              if (vm.faviconUrl) {
+                updateFavicon(vm.faviconUrl);
+              }
               syncNavbarHeight();
-            });
+            }).catch(function () {});
           }
 
           vm.onSearchFocus = function () {
@@ -446,7 +474,7 @@
           vm.$onInit = function () {
             updateAdminState();
             syncNavbarHeight();
-            fetchIncident();
+            fetchPlatformInfo();
             angular.element($window).on('resize', syncNavbarHeight);
             angular.element($window).on('keydown', onGlobalKeyDown);
             angular.element($window).on('click', onGlobalClick);
@@ -459,7 +487,10 @@
           };
 
           $scope.$on('incidentBannerChanged', function () {
-            fetchIncident();
+            fetchPlatformInfo();
+          });
+          $rootScope.$on('platformInfoChanged', function () {
+            fetchPlatformInfo();
           });
 
           $scope.$on('$routeChangeSuccess', function () {

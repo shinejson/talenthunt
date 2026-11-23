@@ -51,7 +51,7 @@ WORKDIR /app/backend
 
 # Built-in Docker health check on the deep health probe endpoint
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-  CMD curl -f http://localhost:5050/api/v1/health || exit 1
+  CMD curl -f http://localhost:${PORT:-5050}/api/v1/health || exit 1
 
 # Launch production WSGI server with Gunicorn
 CMD ["gunicorn", "--config", "gunicorn.conf.py", "wsgi:app"]

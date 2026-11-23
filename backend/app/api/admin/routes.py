@@ -2468,6 +2468,17 @@ def admin_upload_platform_favicon():
         flag_modified(rec, "value_json")
     log_audit(actor_user_id=actor.id, action="PLATFORM_FAVICON_UPDATED", entity_type="settings", after={"url": asset_url})
     db.session.commit()
+    try:
+        import shutil
+        frontend_dir = current_app.config.get("FRONTEND_DIR")
+        upload_folder = current_app.config.get("UPLOAD_FOLDER")
+        if frontend_dir and upload_folder:
+            src = os.path.join(upload_folder, asset.storage_key)
+            dest = os.path.join(frontend_dir, "favicon.ico")
+            if os.path.isfile(src):
+                shutil.copyfile(src, dest)
+    except Exception:
+        pass
     return api_success({"url": asset_url, "asset": asset.to_dict()}, status_code=201)
 
 

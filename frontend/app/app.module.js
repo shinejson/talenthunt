@@ -100,12 +100,37 @@
         countActive: countActive
       };
     })
-    .run(['$rootScope', '$location', 'AuthService', 'PermissionsService', 'ToastService',
-      function ($rootScope, $location, AuthService, PermissionsService, ToastService) {
+    .run(['$rootScope', '$location', 'AuthService', 'PermissionsService', 'ToastService', 'ApiService',
+      function ($rootScope, $location, AuthService, PermissionsService, ToastService, ApiService) {
         $rootScope.auth = AuthService;
         $rootScope.perms = PermissionsService;
         $rootScope.toasts = ToastService.list;
         $rootScope.dismissToast = ToastService.dismiss;
+
+        function updateFavicon(url) {
+          if (!url) return;
+          var link = document.getElementById('appFavicon') || document.querySelector("link[rel~='icon']");
+          if (!link) {
+            link = document.createElement('link');
+            link.id = 'appFavicon';
+            link.rel = 'icon';
+            document.head.appendChild(link);
+          }
+          link.href = url;
+        }
+
+        function loadPlatformBranding() {
+          ApiService.get('/public/info').then(function (res) {
+            var data = (res && res.data) || {};
+            var fav = data.favicon_url || (data.basic_info && data.basic_info.favicon_url);
+            if (fav) {
+              updateFavicon(fav);
+            }
+            if (data.platform_name) {
+              $rootScope.platformName = data.platform_name;
+            }
+          }).catch(function () {});
+        }
 
         function syncLayoutFlags() {
           var p = $location.path() || '/';
@@ -118,6 +143,9 @@
 
         AuthService.bootstrap();
         syncLayoutFlags();
+        loadPlatformBranding();
+
+        $rootScope.$on('platformInfoChanged', loadPlatformBranding);
 
         $rootScope.$on('$routeChangeStart', function (event, next) {
           if (next && next.$$route && next.$$route.originalPath) {

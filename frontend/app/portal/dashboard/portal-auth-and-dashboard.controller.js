@@ -314,10 +314,15 @@
 
         ApiService.get('/applications/mine').then(function (res) {
           vm.applications = res.data || [];
+        }).catch(function () {
+          vm.applications = [];
         });
         ApiService.get('/notifications', { per_page: 5 }).then(function (res) {
           vm.notifications = res.data || [];
           vm.unreadCount = (res.meta && res.meta.unread_count) || 0;
+        }).catch(function () {
+          vm.notifications = [];
+          vm.unreadCount = 0;
         });
       }
     ])
