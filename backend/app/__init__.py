@@ -35,7 +35,10 @@ def create_app(config_object=None) -> Flask:
     else:
         flask_app.config.from_object(config_object)
 
-    os.makedirs(flask_app.config["UPLOAD_FOLDER"], exist_ok=True)
+    try:
+        os.makedirs(flask_app.config["UPLOAD_FOLDER"], exist_ok=True)
+    except Exception as e:
+        flask_app.logger.warning("Could not create UPLOAD_FOLDER %s: %s", flask_app.config.get("UPLOAD_FOLDER"), e)
 
     logging.basicConfig(
         level=logging.INFO,

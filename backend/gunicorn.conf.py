@@ -12,7 +12,7 @@ backlog = 2048
 # Worker processes & threading
 # Rule of thumb: (2 x num_cores) + 1 workers, each with thread pool
 cpu_cores = multiprocessing.cpu_count()
-workers = int(os.environ.get("WEB_CONCURRENCY", max(2, cpu_cores * 2 + 1)))
+workers = int(os.environ.get("WEB_CONCURRENCY", min(4, max(2, cpu_cores))))
 worker_class = "gthread"
 threads = int(os.environ.get("PYTHON_GETHREAD_THREADS", "4"))
 timeout = int(os.environ.get("GUNICORN_TIMEOUT", "60"))

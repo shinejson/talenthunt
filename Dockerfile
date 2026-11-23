@@ -23,6 +23,7 @@ WORKDIR /app
 RUN apt-get update && apt-get install -y --no-install-recommends \
     libpq5 \
     curl \
+    gosu \
     && rm -rf /var/lib/apt/lists/*
 
 # Create unprivileged system user and group
@@ -43,8 +44,6 @@ COPY --chown=appuser:appgroup frontend /app/frontend
 # Create persistent uploads directory and set permissions
 RUN mkdir -p /app/backend/uploads && chown -R appuser:appgroup /app/backend/uploads
 
-USER appuser
-
 EXPOSE 5050
 
 WORKDIR /app/backend
@@ -53,5 +52,5 @@ WORKDIR /app/backend
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
   CMD curl -f http://localhost:${PORT:-5050}/api/v1/health || exit 1
 
-# Launch production WSGI server with Gunicorn
-CMD ["gunicorn", "--config", "gunicorn.conf.py", "wsgi:app"]
+# Launch production WSGI server with Gunicorn (ensures volume permissions before dropping privileges to appuser)
+CMD ["/bin/sh", "-c", "mkdir -p /var/lib/postgresql/data/uploads 2>/dev/null; chown -R appuser:appgroup /var/lib/postgresql/data /app/backend/uploads 2>/dev/null; chmod -R 775 /var/lib/postgresql/data /app/backend/uploads 2>/dev/null; if [ -n \"$UPLOAD_FOLDER\" ]; then mkdir -p \"$UPLOAD_FOLDER\" 2>/dev/null; chown -R appuser:appgroup \"$UPLOAD_FOLDER\" 2>/dev/null; fi; exec gosu appuser gunicorn --config gunicorn.conf.py wsgi:app"]

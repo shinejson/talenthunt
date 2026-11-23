@@ -65,7 +65,7 @@ class StagingConfig(Config):
 class ProductionConfig(Config):
     PUBLIC_BASE_URL = os.environ.get("PUBLIC_BASE_URL", "")
     SESSION_COOKIE_SECURE = True
-    AUTO_SEED_DEMO = False
+    AUTO_SEED_DEMO = os.environ.get("AUTO_SEED_DEMO", "true").lower() == "true"
     RATELIMIT_STORAGE_URI = os.environ.get("RATELIMIT_STORAGE_URI", os.environ.get("REDIS_URL", "memory://"))
 
 
